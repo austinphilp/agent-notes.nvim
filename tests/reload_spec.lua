@@ -12,8 +12,11 @@ T.test(":AgentNotes reload re-requires the modules and keeps notes and threads",
   T.ok(require "agent-notes" == api and AgentNotes == api, "same global table")
   T.eq(before, AgentNotes.summary(), "summary")
   T.eq("answer", AgentNotes.list()[1].thread[1].text, "thread")
-  -- Rendering still works through the new modules.
   T.eq(id + 1, AgentNotes.add { file = a, line = 1, text = "after reload" }, "next id")
+  -- Both notes render through the new modules.
+  local ns = vim.api.nvim_create_namespace "agent_notes"
+  local marks = vim.api.nvim_buf_get_extmarks(vim.fn.bufadd(a), ns, 0, -1, { details = true })
+  T.eq({ "after reload", "kept" }, vim.tbl_map(function(m) return m[4].virt_lines[1][3][1] end, marks))
 end)
 
 T.test("reload re-applies setup options", function()

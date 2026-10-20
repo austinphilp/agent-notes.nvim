@@ -56,4 +56,21 @@ T.test("a corrupt file means on", function()
   T.eq(true, fresh())
 end)
 
+T.test("stepping opens the note float only while autofloat is on", function()
+  reset()
+  fresh()
+  local file = T.file("step.lua", { "a", "b" })
+  AgentNotes.add { file = file, line = 2, text = "step" }
+  AgentNotes.jump(1)
+  T.eq(file, vim.api.nvim_buf_get_name(0), "jumped to the file")
+  T.eq(2, vim.api.nvim_win_get_cursor(0)[1], "jumped to the line")
+  local float = AgentNotes._state.float
+  T.ok(float and vim.api.nvim_win_is_valid(float.win), "float open")
+  vim.api.nvim_win_close(float.win, true)
+  AgentNotes._state.float = nil
+  AgentNotes.autofloat(false)
+  AgentNotes.next()
+  T.ok(AgentNotes._state.float == nil, "no float when off")
+end)
+
 T.run()

@@ -42,7 +42,7 @@ lua AgentNotes.add{file='/abs/a.go', line=42, end_line=48, kind='warn', text='Re
 - Notes read in call order across files; `order=<n>` places one explicitly (equal orders keep call order). Step numbers renumber as notes are added or cleared.
 - Each command is one line. Use single-quoted Lua strings with `\n` for line breaks, `\'` for quotes and `\\` for backslashes. Do not use `[[...]]` Lua strings. For many notes, load them from JSON instead (see PR walkthroughs).
 - A bad kind, path, line or link target makes `add` fail with an error and adds nothing. Then run `lua AgentNotes.summary()`: one line per note with step, `#id`, kind, location and links.
-- `lua AgentNotes.jump(1)` shows the first note; run `nvim-focus` afterwards (see below).
+- `lua AgentNotes.jump(1)` shows the first note; run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus` afterwards (see below).
 
 ### Write notes the user can read
 
@@ -60,7 +60,7 @@ Write each note in plain spoken English, the way you would explain the code to a
 
 1. Check out the PR head in a detached worktree so line numbers match: `git -C <repo> fetch origin pull/<n>/head` and `git -C <repo> worktree add --detach <repo>/.worktrees/pr-<n> FETCH_HEAD` (check that `.worktrees/` is ignored).
 2. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base, and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the bullets from "Write notes the user can read" into its prompt. When the `teach` and `unslop` skills are available, tell it to load them for how to write, and to use `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
-3. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()`, `jump(1)` and `nvim-focus`.
+3. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()`, `jump(1)` and `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus`.
 4. When the walkthrough is over, clear your notes (below) and `git -C <repo> worktree remove <repo>/.worktrees/pr-<n>`.
 
 ## Replies

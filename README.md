@@ -60,7 +60,7 @@ The socket is off by default because it lets any local process that knows the pa
 
 The plugin keeps its state under `stdpath("state")/agent-notes/`:
 
-- `settings.json` holds the autofloat choice. If it does not exist, the plugin reads `stdpath("state")/claude-notes/settings.json` from earlier versions.
+- `settings.json` holds the autofloat choice. If it does not exist, the plugin reads `stdpath("state")/claude-notes/settings.json`, where the earlier claude-notes tooling saved it.
 - `<id>.jsonl` files are reply channels created by `AgentNotes.channel(id)`.
 
 The highlight groups link to diagnostic colours by default. To change them, define these groups in your colourscheme or config:
@@ -147,7 +147,7 @@ A channel is a JSONL file. Each reply and each `respond()` call appends one line
 The Claude Code plugin runs these from its `bin/` directory:
 
 - `bin/nvim-mcp` starts `mcp-neovim-server` against the first live socket: `$NVIM_SOCKET_PATH` when it is set, otherwise the herdr workspace socket and then `default.sock`. The server picks the socket again on every tool call, so nvim can start after it. `nvim-mcp --check` prints the socket and fails when no nvim listens there. `nvim-mcp --socket-path` prints it without checking.
-- `bin/nvim-focus` switches herdr to the pane that runs that nvim. Outside herdr it prints a note and exits 0.
+- `bin/nvim-focus` switches herdr to the pane that runs that nvim. If no nvim listens on the socket, it fails like `nvim-mcp --check`. Outside herdr, or when that nvim is not in a pane of this herdr workspace, it prints a note and exits 0.
 
 The scripts look for sockets in `${XDG_CACHE_HOME:-~/.cache}/nvim`, which matches `stdpath("cache")` for the default `NVIM_APPNAME`.
 
