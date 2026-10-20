@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Switch herdr to the pane running the nvim that nvim-mcp drives.
+# Switch herdr to the pane running the nvim that nvim-mcp drives, or the pane
+# where the user attached to this agent's nvim-session.
 # When that nvim is not in a pane of this herdr workspace (or this is not a
 # herdr pane), print a note and exit 0: there is nothing for herdr to switch.
 # --dry-run prints the target pane and tab without focusing.
@@ -27,17 +28,24 @@ socket=$("$(dirname "$0")/nvim-mcp" --check 2>/dev/null) || fail "no nvim is lis
 command -v herdr >/dev/null || fail "herdr is not on PATH"
 command -v jq >/dev/null || fail "jq is not on PATH"
 
-# herdr reports the nvim TUI process, the parent of the server behind the socket.
+# herdr reports the nvim TUI process, the parent of the server behind the socket,
+# or for a session started by nvim-session, the nvim --remote-ui attached to it.
 server_pid=$(nvim --server "$socket" --remote-expr 'getpid()' 2>/dev/null) || fail "could not query nvim on $socket"
 owner_pids=("$server_pid" "$(ps -o ppid= -p "$server_pid" | tr -d ' ')")
+
+shows_socket() {
+  local pid=$1 owner
+  for owner in "${owner_pids[@]}"; do [[ "$pid" == "$owner" ]] && return 0; done
+  [[ "$(ps -o command= -p "$pid" 2>/dev/null)" == *--remote-ui*"$socket"* ]]
+}
 
 panes=$(herdr pane list --workspace "$HERDR_WORKSPACE_ID") || fail "could not list herdr panes"
 target_pane="" target_tab=""
 while IFS=$'\t' read -r pane tab; do
   info=$(herdr pane process-info --pane "$pane" 2>/dev/null) || continue
   pids=$(jq -r '.result.process_info.foreground_processes[].pid' <<<"$info") || continue
-  for pid in "${owner_pids[@]}"; do
-    if grep -qx "$pid" <<<"$pids"; then
+  for pid in $pids; do
+    if shows_socket "$pid"; then
       target_pane=$pane target_tab=$tab
       break 2
     fi

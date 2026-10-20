@@ -1,16 +1,16 @@
 # agent-notes.nvim
 
-agent-notes.nvim lets a coding agent point at code in your running Neovim and annotate it. Each note shows as a sign plus wrapped virtual lines under the line it is about, coloured by kind. Notes follow their lines through edits and never change the file. You step through notes in reading order, follow links between them, and reply to the agent from a chat window.
+agent-notes.nvim lets a coding agent point at code in Neovim and annotate it. Each note shows as a sign plus wrapped virtual lines under the line it is about, coloured by kind. Notes follow their lines through edits and never change the file. You step through notes in reading order, follow links between them, and reply to the agent from a chat window.
 
 The repository is two plugins:
 
 - A Neovim plugin, installed with lazy.nvim or any plugin manager. It provides the `AgentNotes` Lua API, the `:AgentNotes` command and the `<Leader>a` keymaps. Any agent that can run Lua in your nvim can use it.
-- A Claude Code plugin named `agent-notes`. It ships an `nvim` MCP server that reaches your nvim and the `nvim-review` skill, which tells Claude how to show code, annotate it and read your replies.
+- A Claude Code plugin named `agent-notes`. It ships an `nvim` MCP server, a launcher for background nvim sessions, and the `nvim-review` skill, which tells Claude how to show code, annotate it and read your replies.
 
 ## Requirements
 
 - Neovim 0.10 or later.
-- For the Claude Code plugin: Node.js with `npx`, which runs [`mcp-neovim-server`](https://github.com/bigcodegen/mcp-neovim-server) 0.5.5.
+- For the Claude Code plugin: Claude Code 2.1.214 or later, Perl, and Node.js with `npx`, which runs [`mcp-neovim-server`](https://github.com/bigcodegen/mcp-neovim-server) 0.5.5.
 - Optional: [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim), so stepping through notes stays inside a gitsigns diff view. Optional: [which-key.nvim](https://github.com/folke/which-key.nvim), which shows the `<Leader>a` group as "Agent notes".
 
 ## Install the Neovim plugin
@@ -44,9 +44,31 @@ The plugin loads at startup and defines the global `AgentNotes` table, so an age
    claude plugin install agent-notes@agent-notes-nvim
    ```
 
-3. Start nvim with `socket = true`, then start Claude Code. Ask Claude to show you some code in nvim.
+3. Start Claude Code and ask Claude to show you some code in nvim. Claude starts a background nvim session, sets it up, and gives you a command to attach to it. See [Review sessions](#review-sessions).
 
 The MCP server's tools appear as `mcp__plugin_agent-notes_nvim__<tool>`. If you already have an MCP server named `nvim` that runs the same wrapper, remove it, so Claude does not see two copies of each tool.
+
+## Review sessions
+
+By default the `nvim-review` skill does not use an nvim you already have open. Claude starts a headless nvim with your normal config in the repository it is showing, opens the files, adds the notes and jumps to the first one. Then it gives you one command to attach:
+
+```sh
+nvim --remote-ui --server ~/.cache/nvim/session-1234.sock
+```
+
+The command opens the session's UI in your terminal. `:detach` leaves the session running, and you can attach again with the same command. `:qa` ends the session. Claude stops the session when the review is over, unless you ask to keep it.
+
+Each Claude Code session gets its own nvim, so two agents reviewing at the same time never drive each other's nvim. The launcher is `bin/nvim-session`:
+
+| Command | Effect |
+| --- | --- |
+| `nvim-session start [dir]` | Starts `nvim --headless --listen` in `dir` (default: the current directory) and waits until it answers and has loaded agent-notes.nvim. Then it prints the attach command. If this agent's session already runs, it prints the command again. |
+| `nvim-session stop [--force] [id]` | Ends this agent's session, or session `id`, and removes its files. It refuses while the session has unsaved changes, unless you pass `--force`. |
+| `nvim-session list` | Shows every session: its id, whether it runs, the number of attached UIs, whether its Claude Code process still runs, when it started and its directory. |
+
+A session belongs to the Claude Code process that started it. Its id is that process's pid, which Claude Code gives Bash commands as `CLAUDE_PID`. The MCP server finds the same process as its parent. The session id does not work as a key, because an MCP server keeps the id it started with after `/clear` gives Bash a new one. The files are `session-<id>.sock`, `.info` and `.log` in `${XDG_CACHE_HOME:-~/.cache}/nvim`.
+
+A session that nobody stops quits on its own once its Claude Code process has exited and no UI has been attached for 30 minutes. Unsaved changes keep it running. Set `NVIM_SESSION_IDLE` to change the time, in seconds. `NVIM_SESSION_TIMEOUT` (default 60 seconds) bounds how long `start` waits for nvim.
 
 ## Configure
 
@@ -56,7 +78,7 @@ Call `require("agent-notes").setup(opts)`. lazy.nvim calls it for you with the s
 | --- | --- | --- | --- |
 | `socket` | boolean | `false` | Listens on a well-known socket that `bin/nvim-mcp` looks for. |
 
-The socket is off by default because it lets any local process that knows the path drive your nvim. With `socket = true`, the path is `stdpath("cache")/default.sock`. Inside [herdr](https://github.com/herdrdev/herdr), it is `stdpath("cache")/herdr-<workspace>.sock` for the herdr workspace in `$HERDR_WORKSPACE_ID`. The first nvim to start owns the path. Other nvims claim it when they gain focus after the owner exits. Setting `socket = false` later stops the claims. A socket that this nvim already listens on stays open until nvim exits.
+The socket is for agents that drive an nvim you started yourself; review sessions do not need it. It is off by default because it lets any local process that knows the path drive your nvim. With `socket = true`, the path is `stdpath("cache")/default.sock`. Inside [herdr](https://github.com/herdrdev/herdr), it is `stdpath("cache")/herdr-<workspace>.sock` for the herdr workspace in `$HERDR_WORKSPACE_ID`. The first nvim to start owns the path. Other nvims claim it when they gain focus after the owner exits. Setting `socket = false` later stops the claims. A socket that this nvim already listens on stays open until nvim exits. A session nvim started by `nvim-session` never claims the socket, so it does not take the place of your own nvim.
 
 The plugin keeps its state under `stdpath("state")/agent-notes/`:
 
@@ -146,8 +168,9 @@ A channel is a JSONL file. Each reply and each `respond()` call appends one line
 
 The Claude Code plugin runs these from its `bin/` directory:
 
-- `bin/nvim-mcp` starts `mcp-neovim-server` against the first live socket: `$NVIM_SOCKET_PATH` when it is set, otherwise the herdr workspace socket and then `default.sock`. The server picks the socket again on every tool call, so nvim can start after it. `nvim-mcp --check` prints the socket and fails when no nvim listens there. `nvim-mcp --socket-path` prints it without checking.
-- `bin/nvim-focus` switches herdr to the pane that runs that nvim. If no nvim listens on the socket, it fails like `nvim-mcp --check`. Outside herdr, or when that nvim is not in a pane of this herdr workspace, it prints a note and exits 0.
+- `bin/nvim-session` starts, stops and lists review sessions. See [Review sessions](#review-sessions).
+- `bin/nvim-mcp` starts `mcp-neovim-server`. `$NVIM_SOCKET_PATH` wins when it is set. Otherwise, once this agent has started a session, the server drives only that session's nvim, even after it exits, so it never falls back to your own nvim. Without a session, it uses the first live socket of the herdr workspace socket and `default.sock`. The server picks the socket again on every tool call, so nvim and the session can start after it. `nvim-mcp --check` prints the socket and fails when no nvim listens there. `nvim-mcp --socket-path` prints it without checking.
+- `bin/nvim-focus` switches herdr to the pane that runs that nvim, or to the pane where you attached to the session. If no nvim listens on the socket, it fails like `nvim-mcp --check`. Outside herdr, or when that nvim is not in a pane of this herdr workspace, it prints a note and exits 0.
 
 The scripts look for sockets in `${XDG_CACHE_HOME:-~/.cache}/nvim`, which matches `stdpath("cache")` for the default `NVIM_APPNAME`.
 
@@ -159,7 +182,7 @@ Run the headless tests:
 make test
 ```
 
-`tests/run.sh` runs each `tests/*_spec.lua` file in its own `nvim --clean --headless` with fresh XDG directories. Set `NVIM` to test another nvim binary.
+`tests/run.sh` runs each `tests/*_spec.lua` file in its own `nvim --clean --headless` with fresh XDG directories. Set `NVIM` to test another nvim binary. The session tests also need `nvim`, `node` and `perl` on `PATH`.
 
 ## License
 

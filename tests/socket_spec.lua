@@ -36,6 +36,15 @@ T.test("socket = true claims the socket now and on focus", function()
   stop(default)
 end)
 
+T.test("a session nvim never claims the socket", function()
+  vim.env.AGENT_NOTES_SESSION = "123"
+  AgentNotes.setup { socket = true }
+  vim.api.nvim_exec_autocmds("FocusGained", {})
+  T.ok(not listening(default), "not listening")
+  T.eq(0, #vim.api.nvim_get_autocmds { group = "agent_notes_socket" })
+  vim.env.AGENT_NOTES_SESSION = nil
+end)
+
 T.test("a stale socket file is replaced", function()
   vim.fn.mkdir(cache, "p")
   vim.fn.writefile({}, default)

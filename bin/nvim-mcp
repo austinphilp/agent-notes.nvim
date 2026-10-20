@@ -5,12 +5,18 @@
 #   nvim-mcp --socket-path  print the resolved socket path
 #   nvim-mcp --check        print it and exit 0 when an nvim is listening there
 #
-# Candidates, in order: NVIM_SOCKET_PATH alone when set; otherwise this herdr
-# workspace's socket (inside herdr), then default.sock. The first one with a
-# live nvim wins, falling back to the last. The paths must match
-# lua/agent-notes/socket.lua, which nvim uses with setup { socket = true }. The
-# server re-resolves on every tool call through ../scripts/resolve-socket.mjs,
-# so nvim may start after it.
+# NVIM_SOCKET_PATH wins when set. Otherwise, once this agent has started a
+# session with nvim-session, its session socket is the only target, even after
+# that nvim exits, so the tools never fall through to the user's own nvim. With
+# no session the candidates are this herdr workspace's socket (inside herdr),
+# then default.sock: the first one with a live nvim wins, falling back to the
+# last. Those paths must match lua/agent-notes/socket.lua, which nvim uses with
+# setup { socket = true }. The server re-resolves on every tool call through
+# ../scripts/resolve-socket.mjs, so nvim and the session may start after it.
+#
+# The agent is identified by its Claude Code process: the server's parent, and
+# CLAUDE_PID in the agent's Bash commands. The session id would not do, because
+# an MCP server keeps the one it started with when /clear changes it for Bash.
 set -euo pipefail
 
 readonly SERVER_PACKAGE="mcp-neovim-server@0.5.5"
@@ -26,13 +32,25 @@ is_live() {
 
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/nvim"
 if [[ -n "${NVIM_SOCKET_PATH:-}" ]]; then
-  candidates=("$NVIM_SOCKET_PATH")
-elif [[ -n "${HERDR_WORKSPACE_ID:-}" ]]; then
-  candidates=("$cache_dir/herdr-${HERDR_WORKSPACE_ID//[^A-Za-z0-9_-]/_}.sock" "$cache_dir/default.sock")
+  fallback=("$NVIM_SOCKET_PATH")
+  session_socket="" session_info=""
 else
-  candidates=("$cache_dir/default.sock")
+  if [[ -n "${HERDR_WORKSPACE_ID:-}" ]]; then
+    fallback=("$cache_dir/herdr-${HERDR_WORKSPACE_ID//[^A-Za-z0-9_-]/_}.sock" "$cache_dir/default.sock")
+  else
+    fallback=("$cache_dir/default.sock")
+  fi
+  # Claude Code starts the server itself; --check and --socket-path run from Bash.
+  if [[ -z "${1:-}" ]]; then agent=$PPID; else agent=${CLAUDE_PID:-$PPID}; fi
+  # The paths must match bin/nvim-session.
+  session_socket="$cache_dir/session-$agent.sock" session_info="$cache_dir/session-$agent.info"
 fi
 
+if [[ -n "$session_info" && -f "$session_info" ]]; then
+  candidates=("$session_socket") in_session=true
+else
+  candidates=("${fallback[@]}") in_session=false
+fi
 resolved="${candidates[${#candidates[@]} - 1]}"
 for candidate in "${candidates[@]}"; do
   if is_live "$candidate"; then
@@ -46,8 +64,12 @@ case "${1:-}" in
     echo "$resolved"
     ;;
   --check)
-    is_live "$resolved" ||
-      fail "no nvim is listening on ${candidates[*]}; start nvim (inside herdr: in this workspace) or switch to a running one"
+    if $in_session; then
+      is_live "$resolved" || fail "this agent's nvim session has exited; start a new one with nvim-session start"
+    else
+      is_live "$resolved" ||
+        fail "no nvim is listening on ${candidates[*]}; start a session with nvim-session start"
+    fi
     echo "$resolved"
     ;;
   "")
@@ -57,8 +79,9 @@ case "${1:-}" in
     # ":silent !", system() and Lua still reach the shell, so it is no sandbox.
     resolver="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../scripts/resolve-socket.mjs"
     [[ -f "$resolver" ]] || fail "missing $resolver"
-    NVIM_MCP_SOCKETS=$(IFS=:; echo "${candidates[*]}")
+    NVIM_MCP_SOCKETS=$(IFS=:; echo "${fallback[*]}")
     export NVIM_MCP_SOCKETS NVIM_MCP_RESOLVER=$resolver
+    export NVIM_MCP_SESSION_SOCKET=$session_socket NVIM_MCP_SESSION_INFO=$session_info
     export ALLOW_SHELL_COMMANDS=false
     unset NVIM_SOCKET_PATH # resolve-socket.mjs answers it per call
     # Preload only into the server's node: npx itself fails with a proxied env.

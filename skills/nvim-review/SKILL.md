@@ -1,19 +1,33 @@
 ---
 name: nvim-review
-description: Show, walk through, and annotate code in the user's running Neovim through the nvim MCP server. Use when the user asks to be pointed at, shown, or walked through code, to see where something lives, to open a file, line, or location in nvim, or for an annotated code or PR review in nvim.
+description: Show, walk through, and annotate code in a background Neovim session the user attaches to, through the nvim MCP server. Use when the user asks to be pointed at, shown, or walked through code, to see where something lives, to open a file, line, or location in nvim, or for an annotated code or PR review in nvim.
 ---
 
 # Show and review code in nvim
 
-Drive the user's running nvim with the `nvim` MCP tools from the agent-notes plugin, mainly `vim_command`; `vim_status` shows where the user is. Inside herdr they reach the nvim in this herdr workspace when one is running; otherwise they reach the nvim the user started outside herdr. Use absolute paths everywhere.
+Start a background nvim session with the user's config, set everything up in it with the `nvim` MCP tools from the agent-notes plugin, mainly `vim_command` (`vim_status` shows where the cursor is), then give the user one command to attach. Always start a session; do not look for an nvim the user already has open. The tools reach this agent's session once it is started, and other agents' sessions stay separate. Use absolute paths everywhere.
 
-The plugin's scripts are `${CLAUDE_PLUGIN_ROOT}/bin/nvim-mcp` and `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus`. Run them by these full paths, since another copy earlier on `PATH` would win over the bare names.
+The plugin's scripts are `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session`, `${CLAUDE_PLUGIN_ROOT}/bin/nvim-mcp` and `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus`. Run them by these full paths, since another copy earlier on `PATH` would win over the bare names.
 
-## Check first
+## Start a session
 
-Run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-mcp --check` before the first nvim tool call of a task. It prints the socket of the nvim the tools will reach. A tool call made while no nvim is listening crashes the MCP server for the rest of the session.
+1. Run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session start <dir>`, with the repository or worktree you are showing as `<dir>`. It starts a headless nvim there, waits until the user's config has loaded agent-notes.nvim, and prints the attach command. While the session runs, `start` only prints the command again. If it fails, pass on its message and print the locations as `/abs/path:line` instead.
+2. Run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-mcp --check` before the first nvim tool call. It prints the session's socket. A tool call made while no nvim is listening crashes the MCP server for the rest of the session; it comes back after `/mcp` reconnect or a new Claude session.
+3. Do all the setup over MCP before you reply: open files, open channels, load notes and `jump(1)`.
+4. Give the user the attach command in a code block of its own and tell them the code is ready:
 
-If the check fails, or the nvim tools are missing or erroring, print the locations as `/abs/path:line` and tell the user to start nvim (in this herdr workspace when they use herdr), or to switch to a running nvim so it takes over the socket. The nvim needs agent-notes.nvim with `socket = true`, or must listen on the printed path. A crashed server comes back after `/mcp` reconnect or a new Claude session.
+   ```sh
+   nvim --remote-ui --server /abs/path/session-1234.sock
+   ```
+
+   Tell them that `:detach` leaves the session running and `:qa` ends it.
+
+### Recover a session
+
+- The user detached or closed the terminal: the session keeps running with its notes. Run `nvim-session start <dir>` to print the command again and give it to them.
+- The user quit, or the session exited: `nvim-mcp --check` fails with "this agent's nvim session has exited". Run `nvim-session start <dir>`, redo the setup and give them the new command. The old notes are gone, but reply channel files stay, so pass the same channel paths again.
+- Restart with `nvim-session stop` and then `start` when the session is in a bad state, or to show a different directory, since `start` keeps a running session in its first directory. `stop` refuses while the session has unsaved changes; ask the user before you run `stop --force`, which discards them.
+- `nvim-session list` shows every session: its id, whether it runs, attached UIs, whether its Claude Code process still runs, and its directory.
 
 ## Point at code
 
@@ -28,7 +42,7 @@ When you explain code or give opinions on it, annotate it instead (below). Never
 
 ## Annotate code
 
-The agent-notes.nvim plugin shows each note as a sign plus wrapped virtual lines under its first line, prefixed with its step (`3/10`) and coloured by kind. Notes follow their lines through edits and never change the file. The plugin loads at nvim startup and defines the global `AgentNotes`. If `lua print(AgentNotes ~= nil)` prints `false`, tell the user to install agent-notes.nvim in nvim, and point at code without notes meanwhile.
+The agent-notes.nvim plugin shows each note as a sign plus wrapped virtual lines under its first line, prefixed with its step (`3/10`) and coloured by kind. Notes follow their lines through edits and never change the file. The plugin loads at nvim startup and defines the global `AgentNotes`. When the user's config does not load it, `nvim-session start` fails: tell the user to install agent-notes.nvim in nvim, and print locations meanwhile.
 
 Add one note per `vim_command`:
 
@@ -42,7 +56,7 @@ lua AgentNotes.add{file='/abs/a.go', line=42, end_line=48, kind='warn', text='Re
 - Notes read in call order across files; `order=<n>` places one explicitly (equal orders keep call order). Step numbers renumber as notes are added or cleared.
 - Each command is one line. Use single-quoted Lua strings with `\n` for line breaks, `\'` for quotes and `\\` for backslashes. Do not use `[[...]]` Lua strings. For many notes, load them from JSON instead (see PR walkthroughs).
 - A bad kind, path, line or link target makes `add` fail with an error and adds nothing. Then run `lua AgentNotes.summary()`: one line per note with step, `#id`, kind, location and links.
-- `lua AgentNotes.jump(1)` shows the first note; run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus` afterwards (see below).
+- `lua AgentNotes.jump(1)` shows the first note. Run it last, before you give the user the attach command.
 
 ### Write notes the user can read
 
@@ -59,9 +73,10 @@ Write each note in plain spoken English, the way you would explain the code to a
 ## PR walkthroughs
 
 1. Check out the PR head in a detached worktree so line numbers match: `git -C <repo> fetch origin pull/<n>/head` and `git -C <repo> worktree add --detach <repo>/.worktrees/pr-<n> FETCH_HEAD` (check that `.worktrees/` is ignored).
-2. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base, and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the bullets from "Write notes the user can read" into its prompt. When the `teach` and `unslop` skills are available, tell it to load them for how to write, and to use `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
-3. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()`, `jump(1)` and `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus`.
-4. When the walkthrough is over, clear your notes (below) and `git -C <repo> worktree remove <repo>/.worktrees/pr-<n>`.
+2. Start the session in the worktree: `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session start <repo>/.worktrees/pr-<n>`.
+3. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base, and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the bullets from "Write notes the user can read" into its prompt. When the `teach` and `unslop` skills are available, tell it to load them for how to write, and to use `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
+4. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()` and `jump(1)`, and give the user the attach command.
+5. When the walkthrough is over, wrap up (below), then `git -C <repo> worktree remove <repo>/.worktrees/pr-<n>`.
 
 ## Replies
 
@@ -90,15 +105,17 @@ The first time you add notes in a session, tell the user the keys:
 
 `:AgentNotes` takes `next`, `prev`, `list`, `show`, `enter`, `follow`, `reply`, `replies`, `autofloat`, `summary`, `clear` and `reload`.
 
-## Clear
+## Wrap up
 
-When the walkthrough is over, stop the monitor and clear your notes unless the user wants to keep them: `lua AgentNotes.clear{channel='<path>'}` with a channel, otherwise `clear('/abs/file')` per file. `clear()` and `clear(file)` also remove other sessions' notes.
+When the walkthrough is over, stop the monitor and run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session stop`, unless the user wants to keep the session. If it refuses because of unsaved changes, tell the user and let them save, or ask before `stop --force`. A session nobody stops quits on its own once this Claude Code process has exited and no UI has been attached for 30 minutes; `nvim-session list` shows leftovers, and `nvim-session stop <id>` ends one.
 
-## Then switch the user's view
+If the user keeps the session but not your notes, clear them: `lua AgentNotes.clear{channel='<path>'}` with a channel, otherwise `clear('/abs/file')` per file.
 
-Run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus` after showing code so herdr switches to the nvim pane. When that nvim is not in a pane of this herdr workspace, or you are not in herdr, it only prints a note and changes nothing: tell the user the code is ready in nvim. If it fails, pass on its message.
+## Switch the user's view
+
+Once the user has attached, run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-focus` after showing new code, so herdr switches to the pane where they attached. When they are not attached in a pane of this herdr workspace, or you are not in herdr, it only prints a note and changes nothing: tell them the code is ready in the session. If it fails, pass on its message.
 
 ## Limits
 
-- Do not edit, save, or close the user's buffers, windows, or tabs unless the user explicitly asks. `AgentNotes` is the exception: it loads files and opens floats, the chat and the notes list, but never changes buffer text. Do not use `vim_edit`, `vim_buffer_save`, `vim_search_replace`, or `vim_macro`.
+- Do not edit, save, or close the user's buffers, windows, or tabs unless the user explicitly asks; the user can edit in the session too. End the session with `nvim-session stop`, not `:qa` through the tools. `AgentNotes` is the exception: it loads files and opens floats, the chat and the notes list, but never changes buffer text. Do not use `vim_edit`, `vim_buffer_save`, `vim_search_replace`, or `vim_macro`.
 - Do not run shell commands through nvim (`!`, `system()`, `:terminal`, `os.execute`, `jobstart`).

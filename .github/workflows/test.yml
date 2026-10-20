@@ -16,4 +16,4 @@ jobs:
           neovim: true
           version: ${{ matrix.nvim }}
       - run: make test
-      - run: shellcheck bin/nvim-mcp bin/nvim-focus tests/run.sh
+      - run: shellcheck bin/nvim-mcp bin/nvim-focus bin/nvim-session tests/run.sh

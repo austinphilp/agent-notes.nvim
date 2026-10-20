@@ -1,7 +1,9 @@
 -- Listens on a well-known socket so agents can drive this nvim (bin/nvim-mcp derives
 -- the same paths): one per herdr workspace inside herdr, and default.sock outside it.
 -- The first nvim on a path owns the socket; later ones keep only their default
--- server address and claim it on focus once the owner has exited.
+-- server address and claim it on focus once the owner has exited. A session nvim
+-- started by bin/nvim-session never claims it: it has its own socket, and the
+-- shared one belongs to the user's nvim.
 local M = {}
 
 --- The socket path for this nvim: herdr-<workspace>.sock inside herdr, else default.sock.
@@ -31,12 +33,12 @@ function M.claim()
   if not ok then vim.notify(("agent socket %s unavailable: %s"):format(path, err), vim.log.levels.WARN) end
 end
 
---- Claims the socket now and on every FocusGained. With on = false it stops claiming;
---- a socket already claimed stays until nvim exits, since it may also be one the user
---- started with --listen.
+--- Claims the socket now and on every FocusGained. With on = false, or in a session
+--- nvim, it stops claiming; a socket already claimed stays until nvim exits, since it
+--- may also be one the user started with --listen.
 function M.enable(on)
   local group = vim.api.nvim_create_augroup("agent_notes_socket", { clear = true })
-  if not on then return end
+  if not on or vim.env.AGENT_NOTES_SESSION then return end
   M.claim()
   vim.api.nvim_create_autocmd("FocusGained", { group = group, callback = M.claim })
 end

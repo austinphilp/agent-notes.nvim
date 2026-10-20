@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# Run a background nvim for an agent to drive and the user to attach to.
+#
+#   nvim-session start [dir]          start a headless nvim in dir (default: the
+#                                     current one) and print the attach command
+#   nvim-session stop [--force] [id]  end the session and remove its files
+#   nvim-session list                 show every session and whether it runs
+#
+# A session belongs to the Claude Code process that started it: its id is
+# CLAUDE_PID, which Claude Code sets for Bash commands. nvim-mcp finds the same
+# session through its parent process, the same Claude Code process, so
+# concurrent agents each drive their own nvim. The files sit next to the other
+# agent sockets as session-<id>.sock, .info and .log; nvim-mcp derives the same
+# paths.
+#
+# NVIM_SESSION_TIMEOUT (seconds, default 60) bounds start. NVIM_SESSION_IDLE
+# (seconds, default 1800) is how long a session whose Claude Code process has
+# exited may sit with no UI attached before it quits; see session-guard.lua.
+set -euo pipefail
+
+readonly START_TIMEOUT=${NVIM_SESSION_TIMEOUT:-60}
+readonly IDLE=${NVIM_SESSION_IDLE:-1800}
+# "starting" until VimEnter, then whether the user's config loaded agent-notes.nvim.
+readonly READY_EXPR='v:vim_did_enter ? (luaeval("AgentNotes ~= nil") ? "ready" : "noplugin") : "starting"'
+# Buffers with unsaved text; terminal and other special buffers do not count.
+readonly UNSAVED_EXPR="len(filter(getbufinfo({'bufmodified': 1}), 'getbufvar(v:val.bufnr, \"&buftype\") == \"\"'))"
+
+here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/nvim"
+
+fail() {
+  echo "nvim-session: $*" >&2
+  exit 1
+}
+
+usage() {
+  fail "usage: nvim-session start [dir] | stop [--force] [id] | list"
+}
+
+# Sets socket, info and log for session id $1.
+paths() {
+  socket="$cache_dir/session-$1.sock" info="$cache_dir/session-$1.info" log="$cache_dir/session-$1.log"
+}
+
+own_id() {
+  [[ -n "${CLAUDE_PID:-}" ]] || fail "CLAUDE_PID is not set; run this from a Claude Code Bash command (Claude Code 2.1.214 or later)"
+  echo "$CLAUDE_PID"
+}
+
+# Evaluates a Vim expression in the nvim on $socket and prints the result. The
+# alarm keeps a busy or wedged nvim from hanging the caller.
+remote() {
+  perl -e 'alarm shift; exec @ARGV' 5 nvim --server "$socket" --remote-expr "$1" 2>/dev/null
+}
+
+is_live() {
+  remote 1 >/dev/null
+}
+
+field() {
+  sed -n "s/^$1=//p" "$info"
+}
+
+# True while pid $1 is a running (not zombie) nvim.
+is_nvim() {
+  local stat comm
+  read -r stat comm < <(ps -o stat=,comm= -p "$1" 2>/dev/null) || return 1
+  [[ "$stat" != Z* && "$comm" == *nvim* ]]
+}
+
+attach_command() {
+  printf 'nvim --remote-ui --server %q\n' "$socket"
+}
+
+remove_files() {
+  rm -f "$socket" "$info" "$log"
+}
+
+# Ends nvim $1: quit over RPC when it answers, then signals while it is still an
+# nvim process, so a reused pid is never signalled.
+end_nvim() {
+  local pid=$1 signal
+  if is_live; then remote 'execute("qall!")' >/dev/null || true; fi
+  for signal in TERM KILL; do
+    for _ in {1..50}; do
+      is_nvim "$pid" || return 0
+      sleep 0.1
+    done
+    kill -s "$signal" "$pid" 2>/dev/null || true
+  done
+}
+
+start() {
+  local dir=${1:-$PWD} id pid state
+  [[ -d "$dir" ]] || fail "no such directory: $dir"
+  dir=$(cd "$dir" && pwd -P)
+  id=$(own_id)
+  paths "$id"
+
+  if [[ -f "$info" ]]; then
+    if is_live; then
+      echo "nvim-session: already running in $(remote 'getcwd()'); attach with:" >&2
+      attach_command
+      return
+    fi
+    remove_files # the session exited; start a new one in its place
+  fi
+
+  # macOS caps socket paths at 103 bytes, Linux at 107.
+  ((${#socket} <= 103)) || fail "socket path $socket is too long; set a shorter XDG_CACHE_HOME"
+  mkdir -p "$cache_dir"
+  # AGENT_NOTES_SESSION stops agent-notes.nvim claiming the shared agent socket.
+  (
+    cd "$dir"
+    export AGENT_NOTES_SESSION=$id NVIM_SESSION_IDLE=$IDLE
+    exec nvim --headless --listen "$socket" -S "$here/../scripts/session-guard.lua" </dev/null >"$log" 2>&1
+  ) &
+  pid=$!
+  printf 'pid=%s\ndir=%s\nstarted=%s\n' "$pid" "$dir" "$(date '+%Y-%m-%d %H:%M')" >"$info"
+
+  local deadline=$((SECONDS + START_TIMEOUT))
+  while :; do
+    kill -0 "$pid" 2>/dev/null || start_failed "nvim exited during startup"
+    state=$(remote "$READY_EXPR") || state=starting
+    case $state in
+      ready) break ;;
+      noplugin) start_failed "nvim started, but its config does not load agent-notes.nvim" ;;
+    esac
+    ((SECONDS < deadline)) || start_failed "nvim did not finish starting within ${START_TIMEOUT}s"
+    sleep 0.1
+  done
+  attach_command
+}
+
+start_failed() {
+  echo "nvim-session: $1; nvim output:" >&2
+  tail -n 20 "$log" >&2 || true
+  end_nvim "$pid"
+  remove_files
+  exit 1
+}
+
+stop() {
+  local force=false id="" pid unsaved
+  for arg in "$@"; do
+    case $arg in
+      --force) force=true ;;
+      *[!0-9]* | "") usage ;;
+      *) id=$arg ;;
+    esac
+  done
+  [[ -n "$id" ]] || id=$(own_id)
+  paths "$id"
+  if [[ ! -f "$info" ]]; then
+    echo "nvim-session: no session $id"
+    return
+  fi
+
+  if ! $force && is_live; then
+    unsaved=$(remote "$UNSAVED_EXPR") || unsaved=0
+    ((unsaved == 0)) || fail "session $id has $unsaved buffer(s) with unsaved changes; save them, or stop --force to discard them"
+  fi
+  pid=$(field pid)
+  end_nvim "$pid"
+  remove_files
+  echo "nvim-session: stopped session $id"
+}
+
+list() {
+  local own=${CLAUDE_PID:-} found=false id state uis agent mark
+  for info in "$cache_dir"/session-*.info; do
+    [[ -f "$info" ]] || continue
+    $found || printf '%-8s %-8s %-4s %-7s %-16s %s\n' ID STATE UIS AGENT STARTED DIR
+    found=true
+    id=${info##*/session-} id=${id%.info}
+    paths "$id"
+    if is_live; then
+      state=running uis=$(remote 'len(nvim_list_uis())') || uis="?"
+    else
+      state=exited uis=-
+    fi
+    if kill -0 "$id" 2>/dev/null; then agent=running; else agent=exited; fi
+    mark=""
+    [[ "$id" == "$own" ]] && mark=" (this agent)"
+    printf '%-8s %-8s %-4s %-7s %-16s %s%s\n' "$id" "$state" "$uis" "$agent" "$(field started)" "$(field dir)" "$mark"
+  done
+  $found || echo "nvim-session: no sessions"
+}
+
+case "${1:-}" in
+  start)
+    (($# <= 2)) || usage
+    start "${2:-}"
+    ;;
+  stop)
+    shift
+    stop "$@"
+    ;;
+  list)
+    (($# == 1)) || usage
+    list
+    ;;
+  *) usage ;;
+esac
