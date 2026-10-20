@@ -5,8 +5,8 @@
 #   nvim-mcp --socket-path  print the resolved socket path
 #   nvim-mcp --check        print it and exit 0 when an nvim is listening there
 #
-# NVIM_SOCKET_PATH wins when set. Otherwise, once this agent has started a
-# session with nvim-session, its session socket is the only target, even after
+# NVIM_SOCKET_PATH wins when set. Otherwise, from nvim-session start until
+# nvim-session stop, this agent's session socket is the only target, even after
 # that nvim exits, so the tools never fall through to the user's own nvim. With
 # no session the candidates are this herdr workspace's socket (inside herdr),
 # then default.sock: the first one with a live nvim wins, falling back to the

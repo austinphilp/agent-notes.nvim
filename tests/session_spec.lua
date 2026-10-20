@@ -118,18 +118,19 @@ end)
 T.test("an attached UI shows the notes the agent adds", function()
   local file = T.file("ui.go", { "package ui", "", "func Run() {}" })
   local sock = start(agent)
-  local screen = ""
-  local ui = vim.fn.jobstart({ "nvim", "--remote-ui", "--server", sock }, {
+  local screen, exited = "", false
+  vim.fn.jobstart({ "nvim", "--remote-ui", "--server", sock }, {
     pty = true,
     width = 100,
     height = 30,
     on_stdout = function(_, data) screen = screen .. table.concat(data, "") end,
+    on_exit = function() exited = true end,
   })
   T.ok(vim.wait(10000, function() return rpc(sock, "len(nvim_list_uis())") == 1 end), "UI attached")
   rpc(sock, ("AgentNotes.add { file = %q, line = 3, text = 'Run starts the loop' } AgentNotes.jump(1)"):format(file), true)
   T.ok(vim.wait(10000, function() return screen:find("Run starts the loop", 1, true) ~= nil end), "note rendered")
   session(agent, { "stop" })
-  T.ok(vim.fn.jobwait({ ui }, 5000)[1] >= 0, "UI exits with the session")
+  T.ok(vim.wait(5000, function() return exited end), "UI exits with the session")
 end)
 
 T.test("each agent's MCP tools reach only its own session", function()
@@ -185,11 +186,39 @@ T.test("without a session the tools use the shared socket", function()
   T.eq(default .. "\n", out)
 end)
 
-T.test("a session quits once its agent has exited and no UI is attached", function()
+--- The pid of an agent that has exited.
+local function dead_agent()
   local job = vim.system { "true" }
-  local dead = job.pid
   job:wait()
-  T.ok(not pid_alive(dead), "agent exited")
+  T.ok(not pid_alive(job.pid), "agent exited")
+  return job.pid
+end
+
+T.test("an orphaned session with unsaved changes keeps running", function()
+  local dead = dead_agent()
+  local sock, pid = start(dead)
+  local file = T.tmp .. "/kept.txt"
+  -- With 'confirm', a headless :qall would save the buffer instead of failing.
+  rpc(sock, ("vim.o.confirm = true vim.cmd.edit(%q) vim.api.nvim_buf_set_lines(0, 0, -1, true, { 'draft' })"):format(file), true)
+  vim.wait(4000)
+  T.ok(pid_alive(pid), "still running")
+  T.ok(not vim.uv.fs_stat(file), "nothing saved")
+  session(agent, { "stop", "--force", tostring(dead) })
+end)
+
+T.test("stop leaves alone a process that reused a session's pid", function()
+  local other = vim.fn.jobstart { "nvim", "--clean", "--headless" }
+  local pid = vim.fn.jobpid(other)
+  vim.fn.mkdir(cache, "p")
+  vim.fn.writefile({ "pid=" .. pid, "dir=/", "started=then" }, ("%s/session-%d.info"):format(cache, agent))
+  T.eq(0, (session(agent, { "stop" })), "stop exit code")
+  T.ok(pid_alive(pid), "the other nvim still runs")
+  T.eq({}, vim.fn.glob(cache .. "/session-*", false, true), "files removed")
+  vim.fn.jobstop(other)
+end)
+
+T.test("a session quits once its agent has exited and no UI is attached", function()
+  local dead = dead_agent()
   local _, pid = start(dead)
   T.ok(vim.wait(15000, function() return not pid_alive(pid) end, 200), "session quit")
 

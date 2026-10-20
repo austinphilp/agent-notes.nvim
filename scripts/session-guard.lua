@@ -8,6 +8,15 @@ if not owner then return end
 
 local function orphaned() return vim.uv.kill(owner, 0) ~= 0 and #vim.api.nvim_list_uis() == 0 end
 
+-- Whether a file buffer has unsaved text. Checked instead of relying on :qall
+-- failing, since with 'confirm' set a headless :qall saves them.
+local function unsaved()
+  for _, buf in ipairs(vim.fn.getbufinfo { bufmodified = 1 }) do
+    if vim.bo[buf.bufnr].buftype == "" then return true end
+  end
+  return false
+end
+
 local since -- when the session was first seen orphaned
 local interval = math.min(idle_ms, 60000)
 vim.uv.new_timer():start(
@@ -19,6 +28,6 @@ vim.uv.new_timer():start(
       return
     end
     since = since or vim.uv.now()
-    if vim.uv.now() - since >= idle_ms then pcall(vim.cmd.qall) end
+    if vim.uv.now() - since >= idle_ms and not unsaved() then vim.cmd "qall!" end
   end)
 )

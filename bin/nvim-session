@@ -43,14 +43,16 @@ paths() {
 }
 
 own_id() {
-  [[ -n "${CLAUDE_PID:-}" ]] || fail "CLAUDE_PID is not set; run this from a Claude Code Bash command (Claude Code 2.1.214 or later)"
+  [[ "${CLAUDE_PID:-}" =~ ^[0-9]+$ ]] ||
+    fail "CLAUDE_PID is not set to a pid; run this from a Claude Code Bash command (Claude Code 2.1.214 or later)"
   echo "$CLAUDE_PID"
 }
 
 # Evaluates a Vim expression in the nvim on $socket and prints the result. The
-# alarm keeps a busy or wedged nvim from hanging the caller.
+# alarm keeps a busy or wedged nvim from hanging the caller; the subshell keeps
+# bash's report of the alarm off stderr.
 remote() {
-  perl -e 'alarm shift; exec @ARGV' 5 nvim --server "$socket" --remote-expr "$1" 2>/dev/null
+  (perl -e 'alarm shift; exec @ARGV' 5 nvim --server "$socket" --remote-expr "$1") 2>/dev/null
 }
 
 is_live() {
@@ -61,11 +63,12 @@ field() {
   sed -n "s/^$1=//p" "$info"
 }
 
-# True while pid $1 is a running (not zombie) nvim.
-is_nvim() {
-  local stat comm
-  read -r stat comm < <(ps -o stat=,comm= -p "$1" 2>/dev/null) || return 1
-  [[ "$stat" != Z* && "$comm" == *nvim* ]]
+# True while pid $1 is still this session's nvim (running, not a zombie), so a
+# reused pid is never signalled.
+is_session_nvim() {
+  local stat command
+  read -r stat command < <(ps -o stat=,command= -p "$1" 2>/dev/null) || return 1
+  [[ "$stat" != Z* && "$command" == *" --listen $socket "* ]]
 }
 
 attach_command() {
@@ -76,14 +79,14 @@ remove_files() {
   rm -f "$socket" "$info" "$log"
 }
 
-# Ends nvim $1: quit over RPC when it answers, then signals while it is still an
-# nvim process, so a reused pid is never signalled.
+# Ends nvim $1: quit over RPC when it answers, then signals while it is still
+# this session's nvim.
 end_nvim() {
   local pid=$1 signal
   if is_live; then remote 'execute("qall!")' >/dev/null || true; fi
   for signal in TERM KILL; do
     for _ in {1..50}; do
-      is_nvim "$pid" || return 0
+      is_session_nvim "$pid" || return 0
       sleep 0.1
     done
     kill -s "$signal" "$pid" 2>/dev/null || true

@@ -56,7 +56,7 @@ By default the `nvim-review` skill does not use an nvim you already have open. C
 nvim --remote-ui --server ~/.cache/nvim/session-1234.sock
 ```
 
-The command opens the session's UI in your terminal. `:detach` leaves the session running, and you can attach again with the same command. `:qa` ends the session. Claude stops the session when the review is over, unless you ask to keep it.
+The command opens the session's UI in your terminal. `:detach` (Neovim 0.11 or later) or closing the terminal leaves the session running, and you can attach again with the same command. `:qa` ends the session. Claude stops the session when the review is over, unless you ask to keep it.
 
 Each Claude Code session gets its own nvim, so two agents reviewing at the same time never drive each other's nvim. The launcher is `bin/nvim-session`:
 
@@ -169,7 +169,7 @@ A channel is a JSONL file. Each reply and each `respond()` call appends one line
 The Claude Code plugin runs these from its `bin/` directory:
 
 - `bin/nvim-session` starts, stops and lists review sessions. See [Review sessions](#review-sessions).
-- `bin/nvim-mcp` starts `mcp-neovim-server`. `$NVIM_SOCKET_PATH` wins when it is set. Otherwise, once this agent has started a session, the server drives only that session's nvim, even after it exits, so it never falls back to your own nvim. Without a session, it uses the first live socket of the herdr workspace socket and `default.sock`. The server picks the socket again on every tool call, so nvim and the session can start after it. `nvim-mcp --check` prints the socket and fails when no nvim listens there. `nvim-mcp --socket-path` prints it without checking.
+- `bin/nvim-mcp` starts `mcp-neovim-server`. `$NVIM_SOCKET_PATH` wins when it is set. Otherwise, from the time this agent starts a session until it stops it, the server drives only that session's nvim. That holds even after the session's nvim exits, so the tools never fall back to your own nvim mid-review. Without a session, it uses the first live socket of the herdr workspace socket and `default.sock`. The server picks the socket again on every tool call, so nvim and the session can start after it. `nvim-mcp --check` prints the socket and fails when no nvim listens there. `nvim-mcp --socket-path` prints it without checking.
 - `bin/nvim-focus` switches herdr to the pane that runs that nvim, or to the pane where you attached to the session. If no nvim listens on the socket, it fails like `nvim-mcp --check`. Outside herdr, or when that nvim is not in a pane of this herdr workspace, it prints a note and exits 0.
 
 The scripts look for sockets in `${XDG_CACHE_HOME:-~/.cache}/nvim`, which matches `stdpath("cache")` for the default `NVIM_APPNAME`.
