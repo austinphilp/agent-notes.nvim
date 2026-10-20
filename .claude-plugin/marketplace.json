@@ -1,0 +1,15 @@
+{
+  "name": "agent-notes-nvim",
+  "description": "The agent-notes plugin for annotating code in your running Neovim.",
+  "owner": {
+    "name": "Austin Philp",
+    "url": "https://github.com/austinphilp"
+  },
+  "plugins": [
+    {
+      "name": "agent-notes",
+      "source": ".",
+      "description": "Show, walk through and annotate code in your running Neovim."
+    }
+  ]
+}

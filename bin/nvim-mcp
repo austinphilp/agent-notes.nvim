@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Run mcp-neovim-server against the nvim an agent should drive.
+#
+#   nvim-mcp                start the MCP server on stdio
+#   nvim-mcp --socket-path  print the resolved socket path
+#   nvim-mcp --check        print it and exit 0 when an nvim is listening there
+#
+# Candidates, in order: NVIM_SOCKET_PATH alone when set; otherwise this herdr
+# workspace's socket (inside herdr), then default.sock. The first one with a
+# live nvim wins, falling back to the last. The paths must match
+# lua/agent-notes/socket.lua, which nvim uses with setup { socket = true }. The
+# server re-resolves on every tool call through ../scripts/resolve-socket.mjs,
+# so nvim may start after it.
+set -euo pipefail
+
+readonly SERVER_PACKAGE="mcp-neovim-server@0.5.5"
+
+fail() {
+  echo "nvim-mcp: $*" >&2
+  exit 1
+}
+
+is_live() {
+  nvim --server "$1" --remote-expr 1 >/dev/null 2>&1
+}
+
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/nvim"
+if [[ -n "${NVIM_SOCKET_PATH:-}" ]]; then
+  candidates=("$NVIM_SOCKET_PATH")
+elif [[ -n "${HERDR_WORKSPACE_ID:-}" ]]; then
+  candidates=("$cache_dir/herdr-${HERDR_WORKSPACE_ID//[^A-Za-z0-9_-]/_}.sock" "$cache_dir/default.sock")
+else
+  candidates=("$cache_dir/default.sock")
+fi
+
+resolved="${candidates[${#candidates[@]} - 1]}"
+for candidate in "${candidates[@]}"; do
+  if is_live "$candidate"; then
+    resolved=$candidate
+    break
+  fi
+done
+
+case "${1:-}" in
+  --socket-path)
+    echo "$resolved"
+    ;;
+  --check)
+    is_live "$resolved" ||
+      fail "no nvim is listening on ${candidates[*]}; start nvim (inside herdr: in this workspace) or switch to a running one"
+    echo "$resolved"
+    ;;
+  "")
+    # A call made while no candidate has a live nvim crashes the server
+    # (mcp-neovim-server 0.5.5), so agents run --check first.
+    # ALLOW_SHELL_COMMANDS=false only rejects commands starting with "!";
+    # ":silent !", system() and Lua still reach the shell, so it is no sandbox.
+    resolver="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../scripts/resolve-socket.mjs"
+    [[ -f "$resolver" ]] || fail "missing $resolver"
+    NVIM_MCP_SOCKETS=$(IFS=:; echo "${candidates[*]}")
+    export NVIM_MCP_SOCKETS NVIM_MCP_RESOLVER=$resolver
+    export ALLOW_SHELL_COMMANDS=false
+    unset NVIM_SOCKET_PATH # resolve-socket.mjs answers it per call
+    # Preload only into the server's node: npx itself fails with a proxied env.
+    # shellcheck disable=SC2016 # expanded by npx's shell, where the bin is on PATH
+    exec npx --yes --package="$SERVER_PACKAGE" -c \
+      'exec node --import="file://$NVIM_MCP_RESOLVER" "$(command -v mcp-neovim-server)"'
+    ;;
+  *)
+    fail "usage: nvim-mcp [--socket-path | --check]"
+    ;;
+esac

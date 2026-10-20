@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "nvim": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/nvim-mcp"
+    }
+  }
+}
