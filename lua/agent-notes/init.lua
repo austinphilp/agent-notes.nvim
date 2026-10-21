@@ -643,7 +643,7 @@ api.nvim_create_autocmd("BufReadPost", {
 --- and then changes nothing.
 function M.setup(opts)
   local cfg = config.resolve(opts)
-  config.check_highlights(cfg)
+  config.check(cfg)
   config.apply_highlights(cfg, S.config)
   S.opts, S.config = opts or {}, cfg
   local display = config.DISPLAY[cfg.display]

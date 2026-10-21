@@ -78,6 +78,23 @@ T.test("the which-key group follows the prefix in use", function()
   group()
   AgentNotes.setup { keymaps = keys }
   T.eq("<Space>n", group())
+  AgentNotes.setup { keymaps = { next = "<leader>an", prev = "<Leader>ap" } }
+  T.eq("<leader>a", group(), "<leader> and <Leader> are the same key")
+  AgentNotes.setup { keymaps = false }
+  AgentNotes.setup {
+    keymaps = {
+      next = "]n",
+      prev = "]p",
+      list = false,
+      show = false,
+      enter = false,
+      follow = false,
+      reply = false,
+      autofloat = false,
+      inline = false,
+    },
+  }
+  T.eq(nil, group(), "a one-key prefix gets no group")
   AgentNotes.setup {
     keymaps = {
       next = "]n",
@@ -102,6 +119,22 @@ T.test("a key the user remapped since setup is left alone", function()
   T.eq("<Cmd>echo 'mine'<CR>", vim.fn.maparg("<Leader>an", "n"))
   vim.keymap.del("n", "<Leader>an")
   AgentNotes.setup()
+end)
+
+T.test("reload and setup() leave keys the user remapped or deleted since", function()
+  AgentNotes.setup()
+  vim.keymap.set("n", "<Leader>an", "<Cmd>echo 'mine'<CR>")
+  vim.keymap.del("n", "<Leader>ar")
+  vim.cmd "AgentNotes reload"
+  AgentNotes.setup()
+  T.eq("<Cmd>echo 'mine'<CR>", vim.fn.maparg("<Leader>an", "n"), "remapped key kept")
+  T.eq("", vim.fn.maparg("<Leader>ar", "n"), "deleted key stays deleted")
+  AgentNotes.setup { keymaps = { reply = "]r" } }
+  T.eq("<Plug>(AgentNotesReply)", vim.fn.maparg("]r", "n"), "a new key for the action is mapped")
+  vim.keymap.del("n", "<Leader>an")
+  AgentNotes.setup { keymaps = { next = "]n" } }
+  AgentNotes.setup()
+  T.eq(DEFAULTS, mapped(), "back to the defaults once the user's key is gone")
 end)
 
 T.test("a buffer-local map on the same key does not keep a stale default", function()

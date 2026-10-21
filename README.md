@@ -104,7 +104,7 @@ require("agent-notes").setup {
 | `highlights` | table | `{}` | Colours per group, keyed `info`, `warn`, `issue`, `you` and `step`. See [Colours](#colours). |
 | `keymaps` | table or `false` | the `<Leader>a` keys | Normal-mode keys per action. `false` maps no keys. See [Keymaps](#keymaps). |
 
-`setup()` checks the options before it changes anything. A wrong type or an unknown `display` value raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
+`setup()` checks the options before it changes anything. A wrong type, an unknown `display` value, a highlight spec that `nvim_set_hl()` rejects, or a key that nvim cannot map raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. A `keymaps` entry cannot be a `<Plug>` map. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
 
 Calling `setup()` again replaces the earlier options: keys you leave out go back to their defaults. `:AgentNotes reload` calls `setup()` again with the same options.
 
@@ -133,7 +133,7 @@ Two toggles change the display for the current session only:
 - `<Leader>af`, `:AgentNotes autofloat` or `AgentNotes.autofloat([on])` turns the float on step on or off.
 - `<Leader>ai`, `:AgentNotes inline` or `AgentNotes.inline([on])` turns the virtual lines on or off. The sign stays.
 
-The toggles are not saved. Each new nvim, each `setup()` call and each `:AgentNotes reload` starts again from `display`.
+The toggles are not saved. Each new nvim and each `setup()` call starts again from `display`. So does `:AgentNotes reload` once `setup()` has run; without a `setup()` call, reload keeps the toggles.
 
 ### Colours
 
@@ -211,7 +211,7 @@ vim.keymap.set("n", "]n", "<Plug>(AgentNotesNext)")
 vim.keymap.set("n", "[n", "<Plug>(AgentNotesPrev)")
 ```
 
-When `setup()` maps different keys from an earlier call, it removes the keys it mapped before, unless you mapped them to something else since. `<Leader>` takes the value of `mapleader` when the keys are mapped, so set `mapleader` before lazy.nvim loads plugins.
+When `setup()` maps different keys from an earlier call, it removes the keys it mapped before. A key you remapped or deleted since stays as you left it, even when a later `setup()` call or `:AgentNotes reload` asks for the same key again. `<Leader>` takes the value of `mapleader` when the keys are mapped, so set `mapleader` before lazy.nvim loads plugins.
 
 With which-key.nvim, the keys share a group named "Agent notes". The group's prefix is the part that the mapped keys share, such as `<Leader>a`. The plugin adds no group when the shared part is shorter than two keys. which-key keeps a group that an earlier `setup()` call added.
 
@@ -229,7 +229,7 @@ The plugin keeps reply channels, the `<id>.jsonl` files created by `AgentNotes.c
 
 Version 0.3.0 no longer saves the autofloat toggle. The plugin does not read `stdpath("state")/agent-notes/settings.json` or the older `claude-notes/settings.json`, and it does not delete them. If you had turned the float on step off, set `display = "inline"` instead.
 
-The keys now map to `<Plug>` maps, and `setup()` replaces them with the keys in `keymaps`. `<Leader>ai` is new.
+The keys now map to `<Plug>` maps, and `setup()` replaces them with the keys in `keymaps`. `<Leader>ai` is new. It replaces any map you already had on that key, unless you remap or delete it after the plugin loads, or set `keymaps = { inline = false }`.
 
 ## Keys and commands
 
@@ -249,7 +249,7 @@ The keys below are the defaults; see [Keymaps](#keymaps) to change them.
 | | `replies` | Prints your replies. |
 | | `summary` | Prints one line per note. |
 | | `clear` | Removes every note. |
-| | `reload` | Re-requires the Lua modules, keeps notes, channels and threads, and calls `setup()` again. |
+| | `reload` | Re-requires the Lua modules and keeps notes, channels and threads. If `setup()` has run, it calls `setup()` again with the same options. |
 
 `:AgentNotes` without an action opens the list. In the note float, `<CR>` follows the link under the cursor and `q` closes the float. In the chat, `<C-CR>` or `<C-s>` sends, and `q` or `<Esc>` in Normal mode closes it.
 

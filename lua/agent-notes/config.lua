@@ -121,14 +121,29 @@ local function set_highlights(cfg)
   end
 end
 
---- Raises on a highlights spec that nvim_set_hl rejects, trying each on a
---- scratch group so no AgentNote group changes.
-function M.check_highlights(cfg)
+local check_ns = api.nvim_create_namespace "agent_notes_check"
+
+--- Raises on a highlight spec or key that nvim would reject, trying each in a
+--- scratch namespace or buffer, so a failed setup() changes nothing.
+function M.check(cfg)
   for key, spec in pairs(cfg.highlights) do
-    local ok, err = pcall(api.nvim_set_hl, 0, "AgentNoteCheck", spec)
-    api.nvim_set_hl(0, "AgentNoteCheck", {})
+    local ok, err = pcall(api.nvim_set_hl, check_ns, "AgentNoteCheck", spec)
     if not ok then fail("highlights.%s: %s", key, err) end
   end
+  local buf = api.nvim_create_buf(false, true)
+  for name, lhs in pairs(cfg.keymaps or {}) do
+    local ok, err = true, nil
+    if lhs and lhs:lower():find "^<plug>" then
+      ok, err = false, "a <Plug> map cannot be a key"
+    elseif lhs then
+      ok, err = pcall(vim.keymap.set, "n", lhs, "<Nop>", { buffer = buf })
+    end
+    if not ok then
+      api.nvim_buf_delete(buf, { force = true })
+      fail("keymaps.%s: %s", name, err)
+    end
+  end
+  api.nvim_buf_delete(buf, { force = true })
 end
 
 --- Applies cfg's highlights now and after every :colorscheme. A group that prev
@@ -164,7 +179,8 @@ function M.group_prefix(lhss)
       common = vim.list_slice(t, 1, #t - 1)
     else
       local n = 0
-      while n < #common and n < #t - 1 and common[n + 1] == t[n + 1] do
+      -- <Leader> and <leader> are the same key.
+      while n < #common and n < #t - 1 and common[n + 1]:lower() == t[n + 1]:lower() do
         n = n + 1
       end
       common = vim.list_slice(common, 1, n)
@@ -181,18 +197,28 @@ function M.apply_keymaps(cfg, S)
   for _, m in ipairs(api.nvim_get_keymap "n") do
     global[m.lhsraw or m.lhs] = m.rhs
   end
+  -- Keys the user remapped or deleted since they were mapped here stay as they are.
+  -- They keep their record, so later calls leave them alone too.
+  local changed = {}
   for _, m in ipairs(S.keymaps or {}) do
-    if global[m.raw] == m.rhs then api.nvim_del_keymap("n", m.lhs) end
+    if global[m.raw] == m.rhs then
+      api.nvim_del_keymap("n", m.lhs)
+    else
+      changed[m.name] = m
+    end
   end
   S.keymaps = {}
   local lhss = {}
   for _, a in ipairs(M.ACTIONS) do
     local lhs = cfg.keymaps and cfg.keymaps[a.name]
-    if lhs and (cfg.replies or not a.replies) then
+    local kept = changed[a.name]
+    if kept and kept.key == lhs then
+      S.keymaps[#S.keymaps + 1] = kept
+    elseif lhs and (cfg.replies or not a.replies) then
       local rhs = M.plug(a.name)
       vim.keymap.set("n", lhs, rhs, { remap = true, desc = a.desc })
       local d = vim.fn.maparg(lhs, "n", false, true)
-      S.keymaps[#S.keymaps + 1] = { lhs = d.lhs, raw = d.lhsraw or d.lhs, rhs = rhs }
+      S.keymaps[#S.keymaps + 1] = { name = a.name, key = lhs, lhs = d.lhs, raw = d.lhsraw or d.lhs, rhs = rhs }
       lhss[#lhss + 1] = lhs
     end
   end

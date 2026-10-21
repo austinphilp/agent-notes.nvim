@@ -61,10 +61,14 @@ T.test("bad options raise a clear error and change nothing", function()
     ["keymaps must be a table, got boolean"] = { keymaps = true },
     ["keymaps.next must be a key string or false, got true"] = { keymaps = { next = true } },
     ['keymaps.next must be a key string or false, got ""'] = { keymaps = { next = "" } },
+    ["keymaps.inline: "] = { display = "float", keymaps = { inline = ("x"):rep(80) } },
+    ["keymaps.next: a <Plug> map cannot be a key"] = { keymaps = { next = "<Plug>(AgentNotesNext)" } },
   } do
     T.raises("AgentNotes.setup: " .. needle, function() AgentNotes.setup(opts) end)
   end
   T.eq("inline", AgentNotes.config().display, "unchanged")
+  T.eq(false, AgentNotes._state.autofloat, "display toggles unchanged")
+  T.eq("<Plug>(AgentNotesInline)", vim.fn.maparg("<Leader>ai", "n"), "keys unchanged")
   local before = vim.tbl_map(hl, { "AgentNoteInfo", "AgentNoteWarn" })
   T.raises(
     "highlights.warn",
@@ -139,6 +143,8 @@ T.test("replies off disables replying but keeps notes", function()
   T.ok(AgentNotes._state.chat == nil, "no chat")
   vim.cmd "AgentNotes reply"
   T.ok(T.messages[2]:find("replies are off", 1, true), ":AgentNotes reply")
+  vim.cmd "AgentNotes replies"
+  T.ok(T.messages[3]:find("replies are off", 1, true), ":AgentNotes replies")
   local actions = vim.fn.getcompletion("AgentNotes ", "cmdline")
   T.ok(not vim.tbl_contains(actions, "reply") and not vim.tbl_contains(actions, "replies"), "not completed")
 
@@ -162,6 +168,14 @@ T.test("replies off keeps an open chat and its draft, and hides the reply hint",
   AgentNotes.show()
   T.ok(float_text():find("<C-R> reply", 1, true), "remapped hint: " .. float_text())
   AgentNotes.show()
+  AgentNotes.setup { keymaps = false }
+  AgentNotes.show()
+  T.ok(
+    float_text():find("· :AgentNotes reply\n", 1, true) or float_text():match ":AgentNotes reply$",
+    "command hint: " .. float_text()
+  )
+  AgentNotes.show()
+  AgentNotes.setup()
   AgentNotes.reply()
   T.ok(AgentNotes._state.chat ~= nil, "chat open")
   vim.cmd "stopinsert"

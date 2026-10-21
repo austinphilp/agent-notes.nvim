@@ -54,7 +54,8 @@ return function(C)
     if #links > 0 then keys[#keys + 1] = "<CR> follow link" end
     for _, n in ipairs(notes) do
       if n.channel and C.S.config.replies then
-        keys[#keys + 1] = (C.config.key_for "reply" or ":AgentNotes reply") .. " reply"
+        local key = C.config.key_for "reply"
+        keys[#keys + 1] = key and key .. " reply" or ":AgentNotes reply"
         break
       end
     end
