@@ -56,9 +56,21 @@ local function start(id, dir)
 end
 
 --- A live pid that is not this nvim, for a second agent. Jobs end with this nvim.
+--- Like T.test, but ends every session the test leaves, so one failure does not
+--- spill into the next tests.
+local function test(name, fn)
+  T.test(name, function()
+    local ok, err = xpcall(fn, debug.traceback)
+    for _, info in ipairs(vim.fn.glob(cache .. "/session-*.info", false, true)) do
+      session(agent, { "stop", "--force", info:match "session%-(%d+)%.info$" })
+    end
+    if not ok then error(err, 0) end
+  end)
+end
+
 local function other_agent() return vim.fn.jobpid(vim.fn.jobstart { "sleep", "120" }) end
 
-T.test("start waits for the plugin and prints the attach command", function()
+test("start waits for the plugin and prints the attach command", function()
   local dir = T.file("repo/a.go", { "package a" }):match "(.*)/"
   local sock = start(agent, dir)
   T.eq(dir, rpc(sock, "getcwd()"), "cwd")
@@ -73,7 +85,7 @@ T.test("start waits for the plugin and prints the attach command", function()
   session(agent, { "stop" })
 end)
 
-T.test("list shows sessions and stop ends them and removes their files", function()
+test("list shows sessions and stop ends them and removes their files", function()
   local sock, pid = start(agent)
   local _, out = session(agent, { "list" })
   T.ok(out:find(("%d%%s+running%%s+0%%s+running.*%s %%(this agent%%)"):format(agent, vim.pesc(vim.uv.fs_realpath(T.tmp)))), out)
@@ -88,7 +100,7 @@ T.test("list shows sessions and stop ends them and removes their files", functio
   T.ok(not vim.uv.fs_stat(sock), "socket removed")
 end)
 
-T.test("stop keeps a session with unsaved changes unless forced", function()
+test("stop keeps a session with unsaved changes unless forced", function()
   local sock, pid = start(agent)
   rpc(sock, ("vim.cmd.edit(%q) vim.api.nvim_buf_set_lines(0, 0, -1, true, { 'draft' })"):format(T.tmp .. "/new.txt"), true)
   local code, _, err = session(agent, { "stop" })
@@ -99,7 +111,7 @@ T.test("stop keeps a session with unsaved changes unless forced", function()
   T.ok(not pid_alive(pid), "nvim exited")
 end)
 
-T.test("start fails clearly when nvim does not come up with the plugin", function()
+test("start fails clearly when nvim does not come up with the plugin", function()
   local empty = T.tmp .. "/empty-config"
   vim.fn.mkdir(empty .. "/nvim", "p")
   local code, out, err = session(agent, { "start" }, { XDG_CONFIG_HOME = empty })
@@ -115,7 +127,7 @@ T.test("start fails clearly when nvim does not come up with the plugin", functio
   T.eq({}, vim.fn.glob(cache .. "/session-*", false, true), "files removed")
 end)
 
-T.test("an attached UI shows the notes the agent adds", function()
+test("an attached UI shows the notes the agent adds", function()
   local file = T.file("ui.go", { "package ui", "", "func Run() {}" })
   local sock = start(agent)
   local screen, exited = "", false
@@ -133,7 +145,7 @@ T.test("an attached UI shows the notes the agent adds", function()
   T.ok(vim.wait(5000, function() return exited end), "UI exits with the session")
 end)
 
-T.test("each agent's MCP tools reach only its own session", function()
+test("each agent's MCP tools reach only its own session", function()
   local other = other_agent()
   local sock_a, sock_b = start(agent), start(other)
   rpc(sock_a, "vim.g.owner = 'a'", true)
@@ -180,7 +192,7 @@ T.test("each agent's MCP tools reach only its own session", function()
   session(other, { "stop" })
 end)
 
-T.test("without a session the tools use the shared socket", function()
+test("without a session the tools use the shared socket", function()
   local code, out = run({ root .. "/bin/nvim-mcp", "--socket-path" }, { CLAUDE_PID = tostring(agent) })
   T.eq(0, code, "exit code")
   T.eq(default .. "\n", out)
@@ -194,7 +206,7 @@ local function dead_agent()
   return job.pid
 end
 
-T.test("an orphaned session with unsaved changes keeps running", function()
+test("an orphaned session with unsaved changes keeps running", function()
   local dead = dead_agent()
   local sock, pid = start(dead)
   local file = T.tmp .. "/kept.txt"
@@ -206,7 +218,17 @@ T.test("an orphaned session with unsaved changes keeps running", function()
   session(agent, { "stop", "--force", tostring(dead) })
 end)
 
-T.test("stop leaves alone a process that reused a session's pid", function()
+test("stop kills a session that no longer answers", function()
+  local _, pid = start(agent)
+  vim.uv.kill(pid, "sigstop")
+  local code, out, err = session(agent, { "stop" })
+  T.eq(0, code, "stop exit code")
+  T.eq(("nvim-session: stopped session %d\n"):format(agent), out)
+  T.eq("", err, "no shell noise")
+  T.ok(vim.wait(2000, function() return not pid_alive(pid) end), "nvim killed")
+end)
+
+test("stop leaves alone a process that reused a session's pid", function()
   local other = vim.fn.jobstart { "nvim", "--clean", "--headless" }
   local pid = vim.fn.jobpid(other)
   vim.fn.mkdir(cache, "p")
@@ -217,7 +239,7 @@ T.test("stop leaves alone a process that reused a session's pid", function()
   vim.fn.jobstop(other)
 end)
 
-T.test("a session quits once its agent has exited and no UI is attached", function()
+test("a session quits once its agent has exited and no UI is attached", function()
   local dead = dead_agent()
   local _, pid = start(dead)
   T.ok(vim.wait(15000, function() return not pid_alive(pid) end, 200), "session quit")

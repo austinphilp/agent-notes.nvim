@@ -5,9 +5,10 @@ on:
   pull_request:
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest, macos-latest]
         nvim: [v0.10.4, stable]
     steps:
       - uses: actions/checkout@v4
@@ -16,4 +17,5 @@ jobs:
           neovim: true
           version: ${{ matrix.nvim }}
       - run: make test
-      - run: shellcheck bin/nvim-mcp bin/nvim-focus bin/nvim-session tests/run.sh
+      - if: runner.os == 'Linux'
+        run: shellcheck bin/nvim-mcp bin/nvim-focus bin/nvim-session tests/run.sh

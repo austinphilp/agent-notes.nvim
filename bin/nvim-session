@@ -49,10 +49,10 @@ own_id() {
 }
 
 # Evaluates a Vim expression in the nvim on $socket and prints the result. The
-# alarm keeps a busy or wedged nvim from hanging the caller; the subshell keeps
-# bash's report of the alarm off stderr.
+# alarm keeps a busy or wedged nvim from hanging the caller. The subshell, kept
+# from becoming an exec by the exit, reports the alarm into /dev/null.
 remote() {
-  (perl -e 'alarm shift; exec @ARGV' 5 nvim --server "$socket" --remote-expr "$1") 2>/dev/null
+  (perl -e 'alarm shift; exec @ARGV' 5 nvim --server "$socket" --remote-expr "$1"; exit) 2>/dev/null
 }
 
 is_live() {
@@ -67,7 +67,8 @@ field() {
 # reused pid is never signalled.
 is_session_nvim() {
   local stat command
-  read -r stat command < <(ps -o stat=,command= -p "$1" 2>/dev/null) || return 1
+  # -ww: procps cuts the command line at $COLUMNS, even into a pipe.
+  read -r stat command < <(ps -ww -o stat=,command= -p "$1" 2>/dev/null) || return 1
   [[ "$stat" != Z* && "$command" == *" --listen $socket "* ]]
 }
 
@@ -79,13 +80,13 @@ remove_files() {
   rm -f "$socket" "$info" "$log"
 }
 
-# Ends nvim $1: quit over RPC when it answers, then signals while it is still
-# this session's nvim.
+# Ends nvim $1: quit over RPC unless $2 is false (it does not answer), then
+# signal while it is still this session's nvim.
 end_nvim() {
-  local pid=$1 signal
-  if is_live; then remote 'execute("qall!")' >/dev/null || true; fi
+  local pid=$1 live=${2:-true} signal
+  if $live; then remote 'execute("qall!")' >/dev/null || true; fi
   for signal in TERM KILL; do
-    for _ in {1..50}; do
+    for _ in {1..30}; do
       is_session_nvim "$pid" || return 0
       sleep 0.1
     done
@@ -144,7 +145,7 @@ start_failed() {
 }
 
 stop() {
-  local force=false id="" pid unsaved
+  local force=false live=false id="" pid unsaved
   for arg in "$@"; do
     case $arg in
       --force) force=true ;;
@@ -159,12 +160,13 @@ stop() {
     return
   fi
 
-  if ! $force && is_live; then
+  is_live && live=true
+  if ! $force && $live; then
     unsaved=$(remote "$UNSAVED_EXPR") || unsaved=0
     ((unsaved == 0)) || fail "session $id has $unsaved buffer(s) with unsaved changes; save them, or stop --force to discard them"
   fi
   pid=$(field pid)
-  end_nvim "$pid"
+  end_nvim "$pid" "$live"
   remove_files
   echo "nvim-session: stopped session $id"
 }
