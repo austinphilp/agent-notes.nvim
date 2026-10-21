@@ -20,7 +20,7 @@ The plugin's scripts are `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session`, `${CLAUDE_PLU
    nvim --remote-ui --server /abs/path/session-1234.sock
    ```
 
-   Tell them that `:detach` (Neovim 0.11 or later) or closing the terminal leaves the session running, and `:qa` ends it.
+   Tell them that `:detach` (Neovim 0.11 or later) or closing the terminal leaves the session running (if `:detach` says "no current client", run it again), and `:qa` ends it.
 
 ### Recover a session
 

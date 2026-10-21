@@ -56,7 +56,7 @@ By default the `nvim-review` skill does not use an nvim you already have open. C
 nvim --remote-ui --server ~/.cache/nvim/session-1234.sock
 ```
 
-The command opens the session's UI in your terminal. `:detach` (Neovim 0.11 or later) or closing the terminal leaves the session running, and you can attach again with the same command. `:qa` ends the session. Claude stops the session when the review is over, unless you ask to keep it.
+The command opens the session's UI in your terminal. `:detach` (Neovim 0.11 or later) or closing the terminal leaves the session running, and you can attach again with the same command. The first `:detach` after attaching can fail with "no current client" (seen on Neovim 0.12.5); run it again. `:qa` ends the session. Claude stops the session when the review is over, unless you ask to keep it.
 
 Each Claude Code session gets its own nvim, so two agents reviewing at the same time never drive each other's nvim. The launcher is `bin/nvim-session`:
 
