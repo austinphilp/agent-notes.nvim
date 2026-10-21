@@ -130,6 +130,7 @@ end)
 test("an attached UI shows the notes the agent adds", function()
   local file = T.file("ui.go", { "package ui", "", "func Run() {}" })
   local sock = start(agent)
+  T.eq("<Plug>(AgentNotesNext)", rpc(sock, 'maparg("<Leader>an", "n")'), "key mapped when ready")
   local screen, exited = "", false
   vim.fn.jobstart({ "nvim", "--remote-ui", "--server", sock }, {
     pty = true,
@@ -139,10 +140,30 @@ test("an attached UI shows the notes the agent adds", function()
     on_exit = function() exited = true end,
   })
   T.ok(vim.wait(10000, function() return rpc(sock, "len(nvim_list_uis())") == 1 end), "UI attached")
+  T.eq("<Plug>(AgentNotesNext)", rpc(sock, 'maparg("<Leader>an", "n")'), "key mapped after attaching")
   rpc(sock, ("AgentNotes.add { file = %q, line = 3, text = 'Run starts the loop' } AgentNotes.jump(1)"):format(file), true)
   T.ok(vim.wait(10000, function() return screen:find("Run starts the loop", 1, true) ~= nil end), "note rendered")
   session(agent, { "stop" })
   T.ok(vim.wait(5000, function() return exited end), "UI exits with the session")
+end)
+
+test("the configured keys are mapped by the time start returns", function()
+  local dir = T.tmp .. "/keys-config"
+  for setup, want in pairs {
+    [""] = { an = "<Plug>(AgentNotesNext)", ar = "<Plug>(AgentNotesReply)" },
+    ["require('agent-notes').setup { replies = false, keymaps = { next = ']n' } }"] = { n = "<Plug>(AgentNotesNext)", an = "", ar = "" },
+  } do
+    vim.fn.mkdir(dir .. "/nvim", "p")
+    vim.fn.writefile({ "vim.g.mapleader = ' '", "vim.opt.rtp:prepend(vim.env.NVIM_TEST_ROOT)", setup }, dir .. "/nvim/init.lua")
+    local code, _, err = session(agent, { "start" }, { XDG_CONFIG_HOME = dir })
+    T.eq(0, code, "start exit code: " .. err)
+    T.eq(setup == "", rpc(socket_of(agent), "return AgentNotes.config().replies", true), "agent sees replies")
+    for key, rhs in pairs(want) do
+      local lhs = key == "n" and "]n" or "<Space>" .. key
+      T.eq(rhs, rpc(socket_of(agent), ("maparg(%q, 'n')"):format(lhs)), setup .. " " .. lhs)
+    end
+    session(agent, { "stop" })
+  end
 end)
 
 test("each agent's MCP tools reach only its own session", function()

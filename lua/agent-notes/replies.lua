@@ -6,6 +6,7 @@ return function(C)
   local api = vim.api
   local R = {}
   local DIR = vim.fn.stdpath "state" .. "/agent-notes"
+  local OFF = "AgentNotes: replies are off (setup option replies = false)"
 
   -- Resolves a channel id or path to its file, creating it unless create is false.
   function R.resolve(id, create)
@@ -32,7 +33,9 @@ return function(C)
   --- `channel=` to add(); it is per call, so sessions sharing this nvim stay apart.
   --- id is a path (contains "/") or a name under stdpath('state')/agent-notes;
   --- without one, a new unique name is used.
+  --- Raises while replies are off.
   function R.channel(id)
+    if not C.S.config.replies then error(OFF, 0) end
     local path = R.resolve(id or ("%s-%04x"):format(os.date "%Y%m%d-%H%M%S", vim.fn.rand() % 0x10000))
     print(path)
     return path
@@ -173,6 +176,7 @@ return function(C)
 
   --- Starts a reply to the note in the focused float or on the cursor line.
   function R.reply()
+    if not C.S.config.replies then return vim.notify(OFF, vim.log.levels.WARN) end
     local f = C.S.float
     local in_float = f and api.nvim_get_current_win() == f.win
     local notes = in_float and f.notes or C.notes_at_cursor()

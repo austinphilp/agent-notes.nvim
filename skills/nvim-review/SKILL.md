@@ -13,8 +13,9 @@ The plugin's scripts are `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session`, `${CLAUDE_PLU
 
 1. Run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session start <dir>`, with the repository or worktree you are showing as `<dir>`. It starts a headless nvim there, waits until the user's config has loaded agent-notes.nvim, and prints the attach command. While the session runs, `start` only prints the command again. If it fails, pass on its message and print the locations as `/abs/path:line` instead.
 2. Run `${CLAUDE_PLUGIN_ROOT}/bin/nvim-mcp --check` before the first nvim tool call. It prints the session's socket. A tool call made while no nvim is listening crashes the MCP server for the rest of the session; it comes back after `/mcp` reconnect or a new Claude session.
-3. Do all the setup over MCP before you reply: open files, open channels, load notes and `jump(1)`.
-4. Give the user the attach command in a code block of its own and tell them the code is ready:
+3. Read the user's agent-notes options: `lua print(vim.inspect(AgentNotes.config and AgentNotes.config()))`. Keep `replies` and `keymaps` for later. When it prints `nil`, the plugin is older than 0.3.0: replies are on and the keys are the defaults under [Keys](#keys).
+4. Do all the setup over MCP before you reply: open files, open channels (only when `replies` is on), load notes and `jump(1)`.
+5. Give the user the attach command in a code block of its own and tell them the code is ready:
 
    ```sh
    nvim --remote-ui --server /abs/path/session-1234.sock
@@ -42,7 +43,7 @@ When you explain code or give opinions on it, annotate it instead (below). Never
 
 ## Annotate code
 
-The agent-notes.nvim plugin shows each note as a sign plus wrapped virtual lines under its first line, prefixed with its step (`3/10`) and coloured by kind. Notes follow their lines through edits and never change the file. The plugin loads at nvim startup and defines the global `AgentNotes`. When the user's config does not load it, `nvim-session start` fails: tell the user to install agent-notes.nvim in nvim, and print locations meanwhile.
+The agent-notes.nvim plugin shows each note as a sign plus wrapped virtual lines under its first line (only the sign with `display = "float"`), prefixed with its step (`3/10`) and coloured by kind. Notes follow their lines through edits and never change the file. The plugin loads at nvim startup and defines the global `AgentNotes`. When the user's config does not load it, `nvim-session start` fails: tell the user to install agent-notes.nvim in nvim, and print locations meanwhile.
 
 Add one note per `vim_command`:
 
@@ -56,7 +57,7 @@ lua AgentNotes.add{file='/abs/a.go', line=42, end_line=48, kind='warn', text='Re
 - Notes read in call order across files; `order=<n>` places one explicitly (equal orders keep call order). Step numbers renumber as notes are added or cleared.
 - Each command is one line. Use single-quoted Lua strings with `\n` for line breaks, `\'` for quotes and `\\` for backslashes. Do not use `[[...]]` Lua strings. For many notes, load them from JSON instead (see PR walkthroughs).
 - A bad kind, path, line or link target makes `add` fail with an error and adds nothing. Then run `lua AgentNotes.summary()`: one line per note with step, `#id`, kind, location and links.
-- `lua AgentNotes.jump(1)` shows the first note. Run it last, before you give the user the attach command.
+- `lua AgentNotes.jump(1)` shows the first note. Run it last, before you give the user the attach command. With `display = "inline"` it does not open the float; the note shows under its line.
 
 ### Write notes the user can read
 
@@ -75,12 +76,14 @@ Write each note in plain spoken English, the way you would explain the code to a
 1. Check out the PR head in a detached worktree so line numbers match: `git -C <repo> fetch origin pull/<n>/head` and `git -C <repo> worktree add --detach <repo>/.worktrees/pr-<n> FETCH_HEAD` (check that `.worktrees/` is ignored).
 2. Start the session in the worktree: `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session start <repo>/.worktrees/pr-<n>`.
 3. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base, and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the bullets from "Write notes the user can read" into its prompt. When the `teach` and `unslop` skills are available, tell it to load them for how to write, and to use `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
-4. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()` and `jump(1)`, and give the user the attach command.
+4. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer and replies are on (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()` and `jump(1)`, and give the user the attach command.
 5. When the walkthrough is over, wrap up (below), then `git -C <repo> worktree remove <repo>/.worktrees/pr-<n>`.
 
 ## Replies
 
 The user can answer any note that has a channel; each reply wakes you.
+
+Skip this section when `AgentNotes.config().replies` is `false`: do not open a channel, pass `channel=` or start the Monitor. `channel()` raises "replies are off" then, and `add` ignores `channel=`. `respond()` still shows an answer in the note's thread, but the user cannot write to you from nvim, so ask in the conversation instead.
 
 1. `lua AgentNotes.channel()` prints a new channel file's path (your own path must end in `.jsonl`). Pass it as `channel='<path>'` to each `add`. Channels are per note, so other sessions' notes keep theirs.
 2. Start the `Monitor` tool (load it with ToolSearch `select:Monitor` if deferred) on `tail -n0 -F <path> | grep --line-buffered '"type":"reply"'` with the longest timeout (30 minutes). Re-arm it when it expires while the walkthrough is still going.
@@ -94,16 +97,17 @@ Stepping works inside a gitsigns diff (`:Gitsigns diffthis`, against the index o
 
 ## Keys
 
-The first time you add notes in a session, tell the user the keys:
+The first time you add notes in a session, tell the user the keys. These are the defaults. Use the keys in `AgentNotes.config().keymaps` instead (`keymaps` is `false` when the user maps none), leave out an entry that is `false`, and leave out `<Leader>ar` when replies are off.
 
 - `<Leader>an` / `<Leader>ap`: next or previous note, wrapping at either end.
-- `<Leader>af`: toggle whether stepping opens the note float (on by default).
+- `<Leader>af`: toggle whether stepping opens the note float, for this session. `display` in the user's config sets where it starts: on for `both` and `float`, off for `inline`.
+- `<Leader>ai`: toggle the note text under each line, for this session; the sign stays. Off at the start with `display = "float"`.
 - `<Leader>as`: toggle the note float for the cursor line. `<Leader>ae`: enter it (to scroll or use links).
 - `<Leader>ag`: follow a note's link, with a picker for several. `<CR>` on a link in the float does the same.
 - `<Leader>ar`: open the chat for the note: the note and its thread above, input below. Ctrl+Enter or `<C-s>` sends and keeps the chat open; `<CR>` is a newline; `q` or `<Esc>` in normal mode closes it. Only notes with a channel accept replies.
 - `<Leader>al`: the notes list, its own quickfix list; the user's earlier lists stay reachable with `:colder`.
 
-`:AgentNotes` takes `next`, `prev`, `list`, `show`, `enter`, `follow`, `reply`, `replies`, `autofloat`, `summary`, `clear` and `reload`.
+`:AgentNotes` takes `next`, `prev`, `list`, `show`, `enter`, `follow`, `reply`, `replies`, `autofloat`, `inline`, `summary`, `clear` and `reload`.
 
 ## Wrap up
 

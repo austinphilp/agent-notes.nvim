@@ -68,7 +68,7 @@ T.test("a socket owned by another live nvim is left alone", function()
 end)
 
 T.test("setup rejects a non-boolean socket option", function()
-  T.raises("socket must be true or false", function() AgentNotes.setup { socket = "yes" } end)
+  T.raises("socket must be a boolean, got string", function() AgentNotes.setup { socket = "yes" } end)
 end)
 
 T.run()

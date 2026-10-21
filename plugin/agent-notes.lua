@@ -1,25 +1,11 @@
--- Registers :AgentNotes, the <Leader>a keymaps and the highlight groups, and loads
--- the module so agents can call the global AgentNotes table.
+-- Registers :AgentNotes and a <Plug>(AgentNotes...) map per action, and loads the
+-- module so agents can call the global AgentNotes table. setup() maps the keys to
+-- the <Plug> maps; without a setup() call, the default keys are mapped at VimEnter.
 if vim.g.loaded_agent_notes then return end
 vim.g.loaded_agent_notes = true
 
 local api = vim.api
-
--- Kind is shown by colour only; colourschemes can override these links.
-for name, link in pairs {
-  AgentNoteInfo = "DiagnosticInfo",
-  AgentNoteWarn = "DiagnosticWarn",
-  AgentNoteIssue = "DiagnosticError",
-  AgentNoteYou = "DiagnosticOk",
-  AgentNoteStep = "Comment",
-} do
-  api.nvim_set_hl(0, name, { link = link, default = true })
-end
-
--- Looked up on each call, so the functions stay current after :AgentNotes reload.
-local function call(name)
-  return function() require("agent-notes")[name]() end
-end
+local config = require "agent-notes.config"
 
 -- Re-requires every agent-notes module. Notes, channels, threads and options live in
 -- the global AgentNotes table, which the new module picks up.
@@ -31,42 +17,44 @@ local function reload()
   if notes._state.opts then notes.setup(notes._state.opts) end
 end
 
-local actions = {
-  next = call "next",
-  prev = call "prev",
-  list = call "open",
-  show = call "show",
-  enter = call "enter",
-  follow = call "follow",
-  reply = call "reply",
-  replies = call "replies",
-  autofloat = call "autofloat",
-  summary = call "summary",
-  clear = call "clear",
-  reload = reload,
-}
+-- Looked up on each call, so the functions stay current after :AgentNotes reload.
+local actions = {}
+for _, a in ipairs(config.ACTIONS) do
+  actions[a.name] = function()
+    if a.name == "reload" then return reload() end
+    local notes = require "agent-notes"
+    if a.replies and not notes._state.config.replies then
+      return vim.notify("AgentNotes: replies are off (setup option replies = false)", vim.log.levels.WARN)
+    end
+    notes[a.fn or a.name]()
+  end
+  vim.keymap.set("n", config.plug(a.name), actions[a.name], { desc = a.desc })
+end
+
+local function complete()
+  local replies = require("agent-notes")._state.config.replies
+  local out = {}
+  for _, a in ipairs(config.ACTIONS) do
+    if replies or not a.replies then out[#out + 1] = a.name end
+  end
+  return out
+end
+
 api.nvim_create_user_command("AgentNotes", function(o)
   local action = actions[o.args ~= "" and o.args or "list"]
   if not action then error("AgentNotes: unknown action " .. o.args, 0) end
   action()
-end, { nargs = "?", bar = true, complete = function() return vim.tbl_keys(actions) end, desc = "Agent notes" })
+end, { nargs = "?", bar = true, complete = complete, desc = "Agent notes" })
 
--- <Leader>a mirrors the quickfix <Leader>xn / <Leader>xp pair.
-for key, map in pairs {
-  n = { "next", "Next agent note" },
-  p = { "prev", "Previous agent note" },
-  l = { "open", "Agent notes list" },
-  s = { "show", "Toggle agent note" },
-  e = { "enter", "Enter agent note" },
-  g = { "follow", "Follow agent note link" },
-  r = { "reply", "Reply to agent note" },
-  f = { "autofloat", "Toggle agent note float on step" },
-} do
-  vim.keymap.set("n", "<Leader>a" .. key, call(map[1]), { desc = map[2] })
+local notes = require "agent-notes"
+
+-- A config's own setup() call, or lazy.nvim's, comes before VimEnter. When this file
+-- loads after startup, setup() may follow right after it, so wait a tick.
+local function defaults()
+  if not notes._state.opts then notes.setup() end
 end
--- After startup, so a lazy-loaded which-key is set up by then.
-vim.schedule(function()
-  pcall(function() require("which-key").add { { "<Leader>a", group = "Agent notes" } } end)
-end)
-
-require "agent-notes"
+if vim.v.vim_did_enter == 1 then
+  vim.schedule(defaults)
+else
+  api.nvim_create_autocmd("VimEnter", { once = true, callback = defaults })
+end

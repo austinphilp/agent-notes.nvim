@@ -5,7 +5,8 @@
 -- track their lines through edits with extmarks, and never modify the file.
 -- API: AgentNotes.add{file=, line=, end_line=, kind=, text=, order=, channel=}, open(),
 -- next(), prev(), jump(i), show(), enter(), follow(), list(), summary(),
--- clear([file | {file=, channel=}]), channel([id]), respond(id, text), reply(), replies([channel]), autofloat([on]).
+-- clear([file | {file=, channel=}]), channel([id]), respond(id, text), reply(), replies([channel]),
+-- autofloat([on]), inline([on]), setup(opts), config().
 -- Links in text: [[path:line]] or [[path:line|label]]. Helpers live in agent-notes/*.lua.
 if vim.fn.has "nvim-0.10" == 0 then error("AgentNotes needs nvim 0.10+", 0) end
 
@@ -13,6 +14,15 @@ local M = _G.AgentNotes or {}
 _G.AgentNotes = M
 M._state = M._state or { notes = {}, seq = 0 }
 local S = M._state
+local config = require "agent-notes.config"
+
+-- The effective options. Until setup() runs they are the defaults; the display
+-- toggles start from them and change only for the session.
+if not S.config then
+  S.config = config.resolve()
+  S.inline, S.autofloat = true, true
+end
+config.apply_highlights(S.config)
 
 local api = vim.api
 local ns = api.nvim_create_namespace "agent_notes"
@@ -20,7 +30,7 @@ local track = api.nvim_create_namespace "agent_notes_track"
 local TITLE = "Agent notes"
 local BAR = "▍ "
 -- Kind is shown by colour only, through diagnostic colours: usually blue, amber and red.
--- plugin/agent-notes.lua defines the highlight groups.
+-- agent-notes/config.lua defines the highlight groups.
 local KINDS = {
   info = { sign = "●", hl = "AgentNoteInfo" },
   warn = { sign = "▲", hl = "AgentNoteWarn" },
@@ -100,6 +110,7 @@ local C = {
   range = range,
   ordered = ordered,
   position = position,
+  config = config,
 }
 for _, name in ipairs { "text", "float", "diff", "replies" } do
   C[name] = require("agent-notes." .. name)(C)
@@ -125,7 +136,7 @@ end
 
 -- Draws buf's notes as a sign plus virtual lines: "▍ 3/10 text", with wrapped
 -- lines hanging under the text rather than the step number, and pads the
--- revision side of any diff showing buf to match.
+-- revision side of any diff showing buf to match. With inline notes off, only the sign.
 local function render(buf, steps)
   if not api.nvim_buf_is_loaded(buf) then return end
   api.nvim_buf_clear_namespace(buf, ns, 0, -1)
@@ -144,20 +155,18 @@ local function render(buf, steps)
       local hang = string.rep(" ", #step)
       local width = avail - #pad - vim.fn.strdisplaywidth(BAR) - #step
       local virt = {}
-      for i, text in ipairs(n.lines) do
+      for i, text in ipairs(S.inline and n.lines or {}) do
         for j, piece in ipairs(C.text.wrap(text, width)) do
           local label = (i == 1 and j == 1) and { step, "AgentNoteStep" } or { hang }
           virt[#virt + 1] = { { pad .. BAR, hl }, label, { piece, hl } }
         end
       end
-      api.nvim_buf_set_extmark(
-        buf,
-        ns,
-        l - 1,
-        0,
-        { virt_lines = virt, sign_text = KINDS[n.kind].sign, sign_hl_group = hl }
-      )
-      heights[l] = (heights[l] or 0) + #virt
+      api.nvim_buf_set_extmark(buf, ns, l - 1, 0, {
+        virt_lines = #virt > 0 and virt or nil,
+        sign_text = KINDS[n.kind].sign,
+        sign_hl_group = hl,
+      })
+      if #virt > 0 then heights[l] = (heights[l] or 0) + #virt end
     end
   end
   C.diff.fill(buf, heights)
@@ -379,7 +388,8 @@ function M.add(spec)
   local count = open and api.nvim_buf_is_loaded(open) and api.nvim_buf_line_count(open)
     or math.max(1, #vim.fn.readfile(path))
   if end_line > count then error(("AgentNotes.add: %s has %d lines, got %d"):format(rel(path), count, end_line), 0) end
-  local channel = spec.channel and C.replies.resolve(spec.channel)
+  -- With replies off the note is added without its channel, so it cannot be replied to.
+  local channel = spec.channel and S.config.replies and C.replies.resolve(spec.channel) or nil
   local buf = load(path)
   local max_order = 0
   for _, n in ipairs(S.notes) do
@@ -448,33 +458,29 @@ function M.jump(i)
   if not n then return print "No agent notes" end
   S.current = n.id
   C.goto_location(n.path, (range(n)), function()
-    if S.autofloat ~= false then C.float.open({ n }, false) end
+    if S.autofloat then C.float.open({ n }, false) end
     qf_sync()
   end)
 end
 
--- The autofloat preference outlives the session. A missing or unreadable file means on.
--- Until the first save, the file from when this was named claude-notes is read instead.
-local SETTINGS = vim.fn.stdpath "state" .. "/agent-notes/settings.json"
-local LEGACY_SETTINGS = vim.fn.stdpath "state" .. "/claude-notes/settings.json"
-if S.autofloat == nil then
-  local file = vim.uv.fs_stat(SETTINGS) and SETTINGS or LEGACY_SETTINGS
-  local ok, saved = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(file), "\n")) end)
-  S.autofloat = not (ok and type(saved) == "table" and saved.autofloat == false)
+-- Sets a display toggle for this session; no argument toggles it.
+local function toggle(key, on, label)
+  if on == nil then on = not S[key] end
+  S[key] = on and true or false
+  vim.notify(("Agent notes: %s %s"):format(label, S[key] and "on" or "off"))
+  return S[key]
 end
 
---- Sets whether stepping opens the note float (on by default); no argument toggles.
---- The choice is saved for later sessions.
-function M.autofloat(on)
-  if on == nil then on = S.autofloat == false end
-  S.autofloat = on and true or false
-  local ok, err = pcall(function()
-    vim.fn.mkdir(vim.fs.dirname(SETTINGS), "p")
-    vim.fn.writefile({ vim.json.encode { autofloat = S.autofloat } }, SETTINGS)
-  end)
-  if not ok then vim.notify("AgentNotes: cannot save autofloat: " .. err, vim.log.levels.ERROR) end
-  vim.notify("Agent notes: float on step " .. (S.autofloat and "on" or "off"))
-  return S.autofloat
+--- Sets whether stepping opens the note float for this session; no argument
+--- toggles. `display` in setup() sets where it starts.
+function M.autofloat(on) return toggle("autofloat", on, "float on step") end
+
+--- Sets whether notes show as virtual lines for this session; no argument toggles.
+--- The sign stays either way. `display` in setup() sets where it starts.
+function M.inline(on)
+  local value = toggle("inline", on, "inline notes")
+  render_all()
+  return value
 end
 
 local function step(delta)
@@ -632,13 +638,23 @@ api.nvim_create_autocmd("BufReadPost", {
   end,
 })
 
---- Applies options; see the README. Called again with the same options on `:AgentNotes reload`.
+--- Applies options; see the README. Calling it again replaces the earlier options,
+--- and `:AgentNotes reload` calls it again with the same ones. Raises on a bad value
+--- and then changes nothing.
 function M.setup(opts)
-  opts = vim.tbl_extend("force", { socket = false }, opts or {})
-  if type(opts.socket) ~= "boolean" then error("AgentNotes.setup: socket must be true or false", 0) end
-  S.opts = opts
-  require("agent-notes.socket").enable(opts.socket)
+  local cfg = config.resolve(opts)
+  config.apply_highlights(cfg)
+  S.opts, S.config = opts or {}, cfg
+  local display = config.DISPLAY[cfg.display]
+  S.inline, S.autofloat = display.inline, display.float
+  if not cfg.replies then C.replies.close_chat() end
+  config.apply_keymaps(cfg, S)
+  require("agent-notes.socket").enable(cfg.socket)
+  render_all()
 end
+
+--- A copy of the effective options: the defaults merged with those given to setup().
+function M.config() return vim.deepcopy(S.config) end
 
 -- Re-render after a reload so notes pick up any rendering changes.
 C.float.close()

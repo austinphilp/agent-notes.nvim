@@ -53,8 +53,8 @@ return function(C)
     local keys = {}
     if #links > 0 then keys[#keys + 1] = "<CR> follow link" end
     for _, n in ipairs(notes) do
-      if n.channel then
-        keys[#keys + 1] = "<Leader>ar reply"
+      if n.channel and C.S.config.replies then
+        keys[#keys + 1] = (C.config.key_for "reply" or ":AgentNotes reply") .. " reply"
         break
       end
     end
@@ -127,7 +127,8 @@ return function(C)
     local height = math.max(1, math.min(wrapped, up and above or below))
     local config = { relative = "cursor", row = up and 0 or 1, col = 0, anchor = up and "SW" or "NW", height = height }
     if height < wrapped then
-      config.footer, config.footer_pos = " more: <Leader>ae to scroll ", "right"
+      local key = C.config.key_for "enter" or ":AgentNotes enter"
+      config.footer, config.footer_pos = (" more: %s to scroll "):format(key), "right"
     end
     api.nvim_win_set_config(win, config)
     C.S.float = { win = win, src_win = src_win, notes = notes, spans = spans, links = links }

@@ -4,7 +4,7 @@ agent-notes.nvim lets a coding agent point at code in Neovim and annotate it. Ea
 
 The repository is two plugins:
 
-- A Neovim plugin, installed with lazy.nvim or any plugin manager. It provides the `AgentNotes` Lua API, the `:AgentNotes` command and the `<Leader>a` keymaps. Any agent that can run Lua in your nvim can use it.
+- A Neovim plugin, installed with lazy.nvim or any plugin manager. It provides the `AgentNotes` Lua API, the `:AgentNotes` command, `<Plug>` maps and the `<Leader>a` keymaps. Any agent that can run Lua in your nvim can use it.
 - A Claude Code plugin named `agent-notes`. It ships an `nvim` MCP server, a launcher for background nvim sessions, and the `nvim-review` skill, which tells Claude how to show code, annotate it and read your replies.
 
 ## Requirements
@@ -28,7 +28,7 @@ Add this spec to your lazy.nvim plugins:
 }
 ```
 
-The plugin loads at startup and defines the global `AgentNotes` table, so an agent can call it at any time. Set `mapleader` before lazy.nvim loads plugins, because the keymaps use `<Leader>`.
+The plugin loads at startup and defines the global `AgentNotes` table, so an agent can call it at any time. Set `mapleader` before lazy.nvim loads plugins, because the keymaps use `<Leader>`. See [Configure](#configure) for the other options.
 
 ## Install the Claude Code plugin
 
@@ -72,30 +72,167 @@ A session that nobody stops quits on its own once its Claude Code process has ex
 
 ## Configure
 
-Call `require("agent-notes").setup(opts)`. lazy.nvim calls it for you with the spec's `opts`.
+Call `require("agent-notes").setup(opts)`. lazy.nvim calls it for you with the spec's `opts`. Without a call, or with no `opts`, the plugin uses the defaults below. When `setup()` has not run by the time startup finishes (`VimEnter`), the plugin maps the default keys itself.
+
+These are the defaults:
+
+```lua
+require("agent-notes").setup {
+  socket = false,
+  display = "both", -- "both", "inline" or "float"
+  replies = true,
+  highlights = {}, -- info, warn, issue, you, step: arguments for nvim_set_hl
+  keymaps = {
+    next = "<Leader>an",
+    prev = "<Leader>ap",
+    list = "<Leader>al",
+    show = "<Leader>as",
+    enter = "<Leader>ae",
+    follow = "<Leader>ag",
+    reply = "<Leader>ar",
+    autofloat = "<Leader>af",
+    inline = "<Leader>ai",
+  },
+}
+```
 
 | Option | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `socket` | boolean | `false` | Listens on a well-known socket that `bin/nvim-mcp` looks for. |
+| `socket` | boolean | `false` | Listens on a well-known socket that `bin/nvim-mcp` looks for. See [Agent socket](#agent-socket). |
+| `display` | `"both"`, `"inline"` or `"float"` | `"both"` | How notes show. See [Display modes](#display-modes). |
+| `replies` | boolean | `true` | Lets you reply to the agent. See [Turn replies off](#turn-replies-off). |
+| `highlights` | table | `{}` | Colours per group, keyed `info`, `warn`, `issue`, `you` and `step`. See [Colours](#colours). |
+| `keymaps` | table or `false` | the `<Leader>a` keys | Normal-mode keys per action. `false` maps no keys. See [Keymaps](#keymaps). |
+
+`setup()` checks the options before it changes anything. A wrong type or an unknown `display` value raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
+
+Calling `setup()` again replaces the earlier options: keys you leave out go back to their defaults. `:AgentNotes reload` calls `setup()` again with the same options.
+
+This lazy.nvim spec keeps notes inline, never opens the float on its own, and listens on the agent socket:
+
+```lua
+{
+  "austinphilp/agent-notes.nvim",
+  lazy = false,
+  opts = { socket = true, display = "inline" },
+}
+```
+
+### Display modes
+
+Every mode shows a sign in the sign column, coloured by kind. `<Leader>as` toggles the float for the cursor line and the notes list works in every mode.
+
+| `display` | Virtual lines under the note | Float when you step to a note |
+| --- | --- | --- |
+| `"both"` | yes | yes |
+| `"inline"` | yes | no |
+| `"float"` | no | yes |
+
+Two toggles change the display for the current session only:
+
+- `<Leader>af`, `:AgentNotes autofloat` or `AgentNotes.autofloat([on])` turns the float on step on or off.
+- `<Leader>ai`, `:AgentNotes inline` or `AgentNotes.inline([on])` turns the virtual lines on or off. The sign stays.
+
+The toggles are not saved. Each new nvim, each `setup()` call and each `:AgentNotes reload` starts again from `display`.
+
+### Colours
+
+Each note's kind is shown by colour only. Each group links to a diagnostic colour by default:
+
+| `highlights` key | Group | Default link | Used for |
+| --- | --- | --- | --- |
+| `info` | `AgentNoteInfo` | `DiagnosticInfo` | `info` notes |
+| `warn` | `AgentNoteWarn` | `DiagnosticWarn` | `warn` notes |
+| `issue` | `AgentNoteIssue` | `DiagnosticError` | `issue` notes |
+| `you` | `AgentNoteYou` | `DiagnosticOk` | your replies in a thread |
+| `step` | `AgentNoteStep` | `Comment` | the step number, such as `3/10` |
+
+To change a colour, pass the `nvim_set_hl()` arguments for its group:
+
+```lua
+highlights = {
+  info = { fg = "#7aa2f7" },
+  issue = { link = "ErrorMsg" },
+}
+```
+
+The plugin sets these again after every `:colorscheme`, so they win over a colourscheme's own `AgentNote*` groups.
+
+The default links use `default = true`, so they never replace a group that your colourscheme or config already defines. You can also set a group with `:hi` or `nvim_set_hl()` in your config. `:colorscheme` clears groups set that way, as it does for any group. To keep one across colourscheme changes, set it again in a `ColorScheme` autocommand, or use `highlights`.
+
+### Turn replies off
+
+With `replies = false`, you cannot reply to the agent:
+
+- `<Leader>ar` is not mapped, and the note float shows no reply hint.
+- `:AgentNotes reply` and `:AgentNotes replies` print "replies are off" and are left out of completion. `AgentNotes.reply()` does the same.
+- `AgentNotes.channel()` raises `AgentNotes: replies are off (setup option replies = false)` and creates no file.
+- `AgentNotes.add{channel = ...}` adds the note without its channel, so the agent's notes still show.
+- `AgentNotes.respond(id, text)` still adds the agent's answer to the note's thread and notifies you. It writes to a channel file only for a note that got its channel before replies were turned off.
+- A chat window open at the time of the `setup()` call closes.
+
+The `nvim-review` skill reads the option and does not open a channel or watch for replies.
+
+### Keymaps
+
+The plugin defines a `<Plug>` map for each action. `setup()` maps the keys in `keymaps` to them, in Normal mode, with these descriptions:
+
+| Key | `keymaps` entry | `<Plug>` map | Description |
+| --- | --- | --- | --- |
+| `<Leader>an` | `next` | `<Plug>(AgentNotesNext)` | Next agent note |
+| `<Leader>ap` | `prev` | `<Plug>(AgentNotesPrev)` | Previous agent note |
+| `<Leader>al` | `list` | `<Plug>(AgentNotesList)` | Agent notes list |
+| `<Leader>as` | `show` | `<Plug>(AgentNotesShow)` | Toggle agent note |
+| `<Leader>ae` | `enter` | `<Plug>(AgentNotesEnter)` | Enter agent note |
+| `<Leader>ag` | `follow` | `<Plug>(AgentNotesFollow)` | Follow agent note link |
+| `<Leader>ar` | `reply` | `<Plug>(AgentNotesReply)` | Reply to agent note |
+| `<Leader>af` | `autofloat` | `<Plug>(AgentNotesAutofloat)` | Toggle agent note float on step |
+| `<Leader>ai` | `inline` | `<Plug>(AgentNotesInline)` | Toggle inline agent notes |
+| | | `<Plug>(AgentNotesReplies)` | Print replies to agent notes |
+| | | `<Plug>(AgentNotesSummary)` | Print agent notes summary |
+| | | `<Plug>(AgentNotesClear)` | Clear agent notes |
+| | | `<Plug>(AgentNotesReload)` | Reload agent-notes.nvim |
+
+Set an entry to another key to move it, or to `false` to leave it unmapped. Entries you leave out keep their default:
+
+```lua
+keymaps = {
+  next = "]n",
+  prev = "[n",
+  inline = false,
+}
+```
+
+To map only your own keys, set `keymaps = false` and map the `<Plug>` maps:
+
+```lua
+vim.keymap.set("n", "]n", "<Plug>(AgentNotesNext)")
+vim.keymap.set("n", "[n", "<Plug>(AgentNotesPrev)")
+```
+
+When `setup()` maps different keys from an earlier call, it removes the keys it mapped before, unless you mapped them to something else since. `<Leader>` takes the value of `mapleader` when the keys are mapped, so set `mapleader` before lazy.nvim loads plugins.
+
+With which-key.nvim, the keys share a group named "Agent notes". The group's prefix is the part that the mapped keys share, such as `<Leader>a`. The plugin adds no group when the shared part is shorter than two keys.
+
+The note float and its footer name the key mapped to `<Plug>(AgentNotesReply)` and `<Plug>(AgentNotesEnter)`, or the `:AgentNotes` command when no key is mapped.
+
+### Agent socket
 
 The socket is for agents that drive an nvim you started yourself; review sessions do not need it. It is off by default because it lets any local process that knows the path drive your nvim. With `socket = true`, the path is `stdpath("cache")/default.sock`. Inside [herdr](https://github.com/herdrdev/herdr), it is `stdpath("cache")/herdr-<workspace>.sock` for the herdr workspace in `$HERDR_WORKSPACE_ID`. The first nvim to start owns the path. Other nvims claim it when they gain focus after the owner exits. Setting `socket = false` later stops the claims. A socket that this nvim already listens on stays open until nvim exits. A session nvim started by `nvim-session` never claims the socket, so it does not take the place of your own nvim.
 
-The plugin keeps its state under `stdpath("state")/agent-notes/`:
+### State files
 
-- `settings.json` holds the autofloat choice. If it does not exist, the plugin reads `stdpath("state")/claude-notes/settings.json`, where the earlier claude-notes tooling saved it.
-- `<id>.jsonl` files are reply channels created by `AgentNotes.channel(id)`.
+The plugin keeps reply channels, the `<id>.jsonl` files created by `AgentNotes.channel(id)`, under `stdpath("state")/agent-notes/`.
 
-The highlight groups link to diagnostic colours by default. To change them, define these groups in your colourscheme or config:
+### Upgrade from 0.2
 
-| Group | Default link | Used for |
-| --- | --- | --- |
-| `AgentNoteInfo` | `DiagnosticInfo` | `info` notes |
-| `AgentNoteWarn` | `DiagnosticWarn` | `warn` notes |
-| `AgentNoteIssue` | `DiagnosticError` | `issue` notes |
-| `AgentNoteYou` | `DiagnosticOk` | your replies in a thread |
-| `AgentNoteStep` | `Comment` | the step number, such as `3/10` |
+Version 0.3.0 no longer saves the autofloat toggle. The plugin does not read `stdpath("state")/agent-notes/settings.json` or the older `claude-notes/settings.json`, and it does not delete them. If you had turned the float on step off, set `display = "inline"` instead.
+
+The keys are now mapped to `<Plug>` maps by `setup()`, or at `VimEnter` without a `setup()` call, instead of when the plugin file loads. `<Leader>ai` is new.
 
 ## Keys and commands
+
+The keys below are the defaults; see [Keymaps](#keymaps) to change them.
 
 | Key | `:AgentNotes` action | Effect |
 | --- | --- | --- |
@@ -106,11 +243,12 @@ The highlight groups link to diagnostic colours by default. To change them, defi
 | `<Leader>ae` | `enter` | Enters the note float, to scroll it or use its links. |
 | `<Leader>ag` | `follow` | Follows a note's link, with a picker when there are several. |
 | `<Leader>ar` | `reply` | Opens the chat for the note. Only notes with a channel accept replies. |
-| `<Leader>af` | `autofloat` | Toggles whether stepping opens the note float. The choice persists. |
+| `<Leader>af` | `autofloat` | Toggles whether stepping opens the note float, for this session. |
+| `<Leader>ai` | `inline` | Toggles the virtual lines under notes, for this session. |
 | | `replies` | Prints your replies. |
 | | `summary` | Prints one line per note. |
 | | `clear` | Removes every note. |
-| | `reload` | Re-requires the Lua modules and keeps notes, channels and threads. |
+| | `reload` | Re-requires the Lua modules, keeps notes, channels and threads, and calls `setup()` again. |
 
 `:AgentNotes` without an action opens the list. In the note float, `<CR>` follows the link under the cursor and `q` closes the float. In the chat, `<C-CR>` or `<C-s>` sends, and `q` or `<Esc>` in Normal mode closes it.
 
@@ -130,7 +268,7 @@ Adds one note and returns its id. Adding a note identical to an existing one ret
 | `kind` | no | `info` (default), `warn` or `issue`. |
 | `text` | yes | Note text. `\n` starts a new line. `[[path:line]]` and `[[path:line\|label]]` are links. |
 | `order` | no | Position in reading order. Notes with equal orders keep call order. Defaults to after the last note. |
-| `channel` | no | A channel id or path from `channel()`, so the user can reply. |
+| `channel` | no | A channel id or path from `channel()`, so the user can reply. Ignored while replies are off. |
 
 A JSON `null` field counts as absent.
 
@@ -147,12 +285,24 @@ A JSON `null` field counts as absent.
 | `enter()` | Enters the note float, opening it for the cursor line first. |
 | `follow()` | Follows a link from the focused float, the notes list or the cursor line. |
 | `clear([filter])` | Removes notes and returns how many. With no argument it removes all notes. A string removes one file's notes. `{ file = ?, channel = ? }` removes the notes that match. |
-| `channel([id])` | Creates a reply channel and prints and returns its path. `id` is a name under `stdpath("state")/agent-notes`, or a path that ends in `.jsonl`. Without `id`, it picks a new unique name. |
+| `channel([id])` | Raises an error while replies are off. Otherwise creates a reply channel and prints and returns its path. `id` is a name under `stdpath("state")/agent-notes`, or a path that ends in `.jsonl`. Without `id`, it picks a new unique name. |
 | `respond(id, text)` | Adds the agent's answer to note `id`'s thread and notifies the user. |
-| `reply()` | Opens the chat for the note in the focused float or on the cursor line. |
+| `reply()` | Opens the chat for the note in the focused float or on the cursor line. With replies off, it prints a warning instead. |
 | `replies([channel])` | Prints and returns the user's replies in reading order, optionally only those to one channel's notes. |
-| `autofloat([on])` | Sets whether stepping opens the note float, or toggles it without an argument. Saves the choice. |
+| `autofloat([on])` | Sets whether stepping opens the note float for this session, or toggles it without an argument. Returns the new value. |
+| `inline([on])` | Sets whether notes show as virtual lines for this session, or toggles it without an argument. Returns the new value. |
 | `setup(opts)` | Applies options. See [Configure](#configure). |
+| `config()` | Returns a copy of the effective options: the defaults merged with those given to `setup()`. |
+
+### Read the options from an agent
+
+An agent reads the effective options with `AgentNotes.config()`, which returns a copy of the table shown in [Configure](#configure), for example:
+
+```vim
+:lua print(vim.inspect(AgentNotes.config()))
+```
+
+Check `replies` before you open a channel: with `replies = false`, `channel()` raises an error and `add` drops `channel`. `keymaps` holds the keys to tell the user, where `false` means unmapped. While replies are off, the `reply` key is unmapped whatever `keymaps.reply` holds. In versions before 0.3.0, `AgentNotes.config` is `nil`, and replies are always on.
 
 ### Reply channels
 
