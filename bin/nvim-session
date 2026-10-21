@@ -92,6 +92,8 @@ end_nvim() {
     done
     kill -s "$signal" "$pid" 2>/dev/null || true
   done
+  sleep 0.5
+  ! is_session_nvim "$pid" || fail "could not end nvim (pid $pid)"
 }
 
 start() {
@@ -160,12 +162,15 @@ stop() {
     return
   fi
 
-  is_live && live=true
-  if ! $force && $live; then
-    unsaved=$(remote "$UNSAVED_EXPR") || unsaved=0
-    ((unsaved == 0)) || fail "session $id has $unsaved buffer(s) with unsaved changes; save them, or stop --force to discard them"
-  fi
   pid=$(field pid)
+  is_live && live=true
+  # A session that does not answer may only be busy, so only --force kills it.
+  if ! $force && $live; then
+    unsaved=$(remote "$UNSAVED_EXPR") || fail "session $id did not answer; try again, or stop --force to end it anyway"
+    ((unsaved == 0)) || fail "session $id has $unsaved buffer(s) with unsaved changes; save them, or stop --force to discard them"
+  elif ! $force && is_session_nvim "$pid"; then
+    fail "session $id is running but does not answer; try again, or stop --force to kill it"
+  fi
   end_nvim "$pid" "$live"
   remove_files
   echo "nvim-session: stopped session $id"

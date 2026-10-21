@@ -26,7 +26,7 @@ The plugin's scripts are `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session`, `${CLAUDE_PLU
 
 - The user detached or closed the terminal: the session keeps running with its notes. Run `nvim-session start <dir>` to print the command again and give it to them.
 - The user quit, or the session exited: `nvim-mcp --check` fails with "this agent's nvim session has exited". Run `nvim-session start <dir>`, redo the setup and give them the new command. The old notes are gone, but reply channel files stay, so pass the same channel paths again.
-- Restart with `nvim-session stop` and then `start` when the session is in a bad state, or to show a different directory, since `start` keeps a running session in its first directory. `stop` refuses while the session has unsaved changes; ask the user before you run `stop --force`, which discards them.
+- Restart with `nvim-session stop` and then `start` when the session is in a bad state, or to show a different directory, since `start` keeps a running session in its first directory. `stop` refuses while the session has unsaved changes or does not answer; ask the user before you run `stop --force`, which discards the changes or kills the nvim.
 - `nvim-session list` shows every session: its id, whether it runs, attached UIs, whether its Claude Code process still runs, and its directory.
 
 ## Point at code

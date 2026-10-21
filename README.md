@@ -63,7 +63,7 @@ Each Claude Code session gets its own nvim, so two agents reviewing at the same 
 | Command | Effect |
 | --- | --- |
 | `nvim-session start [dir]` | Starts `nvim --headless --listen` in `dir` (default: the current directory) and waits until it answers and has loaded agent-notes.nvim. Then it prints the attach command. If this agent's session already runs, it prints the command again. |
-| `nvim-session stop [--force] [id]` | Ends this agent's session, or session `id`, and removes its files. It refuses while the session has unsaved changes, unless you pass `--force`. |
+| `nvim-session stop [--force] [id]` | Ends this agent's session, or session `id`, and removes its files. It refuses while the session has unsaved changes or does not answer, unless you pass `--force`. |
 | `nvim-session list` | Shows every session: its id, whether it runs, the number of attached UIs, whether its Claude Code process still runs, when it started and its directory. |
 
 A session belongs to the Claude Code process that started it. Its id is that process's pid, which Claude Code gives Bash commands as `CLAUDE_PID`. The MCP server finds the same process as its parent. The session id does not work as a key, because an MCP server keeps the id it started with after `/clear` gives Bash a new one. The files are `session-<id>.sock`, `.info` and `.log` in `${XDG_CACHE_HOME:-~/.cache}/nvim`.

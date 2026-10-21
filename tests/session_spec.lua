@@ -55,12 +55,11 @@ local function start(id, dir)
   return sock, rpc(sock, "getpid()")
 end
 
---- A live pid that is not this nvim, for a second agent. Jobs end with this nvim.
 --- Like T.test, but ends every session the test leaves, so one failure does not
 --- spill into the next tests.
 local function test(name, fn)
   T.test(name, function()
-    local ok, err = xpcall(fn, debug.traceback)
+    local ok, err = pcall(fn)
     for _, info in ipairs(vim.fn.glob(cache .. "/session-*.info", false, true)) do
       session(agent, { "stop", "--force", info:match "session%-(%d+)%.info$" })
     end
@@ -68,6 +67,7 @@ local function test(name, fn)
   end)
 end
 
+--- A live pid that is not this nvim, for a second agent. Jobs end with this nvim.
 local function other_agent() return vim.fn.jobpid(vim.fn.jobstart { "sleep", "120" }) end
 
 test("start waits for the plugin and prints the attach command", function()
@@ -218,10 +218,15 @@ test("an orphaned session with unsaved changes keeps running", function()
   session(agent, { "stop", "--force", tostring(dead) })
 end)
 
-test("stop kills a session that no longer answers", function()
+test("stop --force kills a session that no longer answers", function()
   local _, pid = start(agent)
   vim.uv.kill(pid, "sigstop")
-  local code, out, err = session(agent, { "stop" })
+  local code, _, err = session(agent, { "stop" })
+  T.eq(1, code, "stop exit code")
+  T.ok(err:find("is running but does not answer", 1, true), err)
+  T.ok(pid_alive(pid), "not killed without --force")
+  local out
+  code, out, err = session(agent, { "stop", "--force" })
   T.eq(0, code, "stop exit code")
   T.eq(("nvim-session: stopped session %d\n"):format(agent), out)
   T.eq("", err, "no shell noise")
