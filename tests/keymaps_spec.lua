@@ -134,7 +134,7 @@ T.test("reload and setup() leave keys the user remapped or deleted since", funct
   -- Even after a call that maps none of them, or another key for the action.
   AgentNotes.setup { keymaps = false }
   AgentNotes.setup { keymaps = { next = "]n" } }
-  AgentNotes.setup { keymaps = { prev = "<leader>an" } }
+  AgentNotes.setup { keymaps = { next = false, prev = "<leader>an" } }
   T.eq("<Cmd>echo 'mine'<CR>", vim.fn.maparg("<Leader>an", "n"), "kept after round trips and for another action")
   vim.keymap.del("n", "<Leader>an")
   AgentNotes.setup()

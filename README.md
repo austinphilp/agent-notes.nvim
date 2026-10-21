@@ -104,7 +104,7 @@ require("agent-notes").setup {
 | `highlights` | table | `{}` | Colours per group, keyed `info`, `warn`, `issue`, `you` and `step`. See [Colours](#colours). |
 | `keymaps` | table or `false` | the `<Leader>a` keys | Normal-mode keys per action. `false` maps no keys. See [Keymaps](#keymaps). |
 
-`setup()` checks the options before it changes anything. A wrong type, an unknown `display` value, a highlight spec that `nvim_set_hl()` rejects, or a key that nvim cannot map raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. A `keymaps` entry cannot be a `<Plug>` map. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
+`setup()` checks the options before it changes anything. A wrong type, an unknown `display` value, a highlight spec that `nvim_set_hl()` rejects, or a key that nvim cannot map raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. A `keymaps` entry cannot be a `<Plug>` map, and two entries cannot name the same key. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
 
 Calling `setup()` again replaces the earlier options: keys you leave out go back to their defaults. `:AgentNotes reload` calls `setup()` again with the same options.
 

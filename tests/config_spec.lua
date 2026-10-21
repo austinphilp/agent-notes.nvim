@@ -50,6 +50,7 @@ end)
 
 T.test("bad options raise a clear error and change nothing", function()
   AgentNotes.setup { display = "inline" }
+  local bufs = #api.nvim_list_bufs()
   for needle, opts in pairs {
     ['display must be "both", "inline" or "float", got "side"'] = { display = "side" },
     ["display must be"] = { display = 1 },
@@ -63,12 +64,15 @@ T.test("bad options raise a clear error and change nothing", function()
     ['keymaps.next must be a key string or false, got ""'] = { keymaps = { next = "" } },
     ["keymaps.inline: "] = { display = "float", keymaps = { inline = ("x"):rep(80) } },
     ["keymaps.next: a <Plug> map cannot be a key"] = { keymaps = { next = "<Plug>(AgentNotesNext)" } },
+    ["keymaps.prev: same key as keymaps.next"] = { keymaps = { next = "<leader>x", prev = "<Leader>x" } },
   } do
     T.raises("AgentNotes.setup: " .. needle, function() AgentNotes.setup(opts) end)
   end
   T.eq("inline", AgentNotes.config().display, "unchanged")
   T.eq(false, AgentNotes._state.autofloat, "display toggles unchanged")
   T.eq("<Plug>(AgentNotesInline)", vim.fn.maparg("<Leader>ai", "n"), "keys unchanged")
+  T.eq("", vim.o.eventignore, "eventignore restored")
+  T.eq(bufs, #api.nvim_list_bufs(), "no scratch buffer left")
   local before = vim.tbl_map(hl, { "AgentNoteInfo", "AgentNoteWarn" })
   T.raises(
     "highlights.warn",

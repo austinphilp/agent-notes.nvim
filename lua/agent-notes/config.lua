@@ -125,14 +125,17 @@ local check_ns = api.nvim_create_namespace "agent_notes_check"
 
 -- Maps each of cfg's keys buffer-locally in a scratch buffer, with no autocmds, and
 -- returns the key bytes nvim stores for each action, so keys compare as nvim sees
--- them (<Leader> resolved, case of <...> ignored). Raises on a key nvim rejects.
+-- them (<Leader> resolved, case of <...> ignored). Raises on a key nvim rejects
+-- and on one key given to two actions.
 local function key_bytes(cfg)
   local out = {}
   local ei = vim.o.eventignore
   vim.o.eventignore = "all"
   local buf = api.nvim_create_buf(false, true)
   local ok, err = pcall(function()
-    for name, lhs in pairs(cfg.keymaps or {}) do
+    local owner = {}
+    for _, a in ipairs(M.ACTIONS) do
+      local name, lhs = a.name, cfg.keymaps and cfg.keymaps[a.name]
       if lhs then
         if lhs:lower():find "^<plug>" then fail("keymaps.%s: a <Plug> map cannot be a key", name) end
         local set, msg = pcall(vim.keymap.set, "n", lhs, "<Nop>", { buffer = buf, desc = name })
@@ -140,6 +143,8 @@ local function key_bytes(cfg)
         for _, m in ipairs(api.nvim_buf_get_keymap(buf, "n")) do
           if m.desc == name then out[name] = m.lhsraw or m.lhs end
         end
+        if owner[out[name]] then fail("keymaps.%s: same key as keymaps.%s", name, owner[out[name]]) end
+        owner[out[name]] = name
       end
     end
   end)
