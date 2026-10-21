@@ -121,12 +121,21 @@ local function set_highlights(cfg)
   end
 end
 
---- Applies cfg's highlights now and after every :colorscheme. Raises on a spec
---- that nvim_set_hl rejects.
-function M.apply_highlights(cfg)
+--- Raises on a highlights spec that nvim_set_hl rejects, trying each on a
+--- scratch group so no AgentNote group changes.
+function M.check_highlights(cfg)
   for key, spec in pairs(cfg.highlights) do
-    local ok, err = pcall(api.nvim_set_hl, 0, M.HIGHLIGHTS[key][1], spec)
+    local ok, err = pcall(api.nvim_set_hl, 0, "AgentNoteCheck", spec)
+    api.nvim_set_hl(0, "AgentNoteCheck", {})
     if not ok then fail("highlights.%s: %s", key, err) end
+  end
+end
+
+--- Applies cfg's highlights now and after every :colorscheme. A group that prev
+--- overrode and cfg does not goes back to its default link.
+function M.apply_highlights(cfg, prev)
+  for key, hl in pairs(M.HIGHLIGHTS) do
+    if prev and prev.highlights[key] and not cfg.highlights[key] then api.nvim_set_hl(0, hl[1], { link = hl[2] }) end
   end
   set_highlights(cfg)
   api.nvim_create_autocmd("ColorScheme", {
@@ -167,8 +176,13 @@ end
 --- Maps cfg's keys to the <Plug> maps, after removing the keys an earlier call
 --- mapped that still point at them. S.keymaps keeps the mapped keys across reloads.
 function M.apply_keymaps(cfg, S)
+  -- Global maps only: a buffer-local map on the same key must not hide ours.
+  local global = {}
+  for _, m in ipairs(api.nvim_get_keymap "n") do
+    global[m.lhsraw or m.lhs] = m.rhs
+  end
   for _, m in ipairs(S.keymaps or {}) do
-    if vim.fn.maparg(m.lhs, "n", false, true).rhs == m.rhs then api.nvim_del_keymap("n", m.lhs) end
+    if global[m.raw] == m.rhs then api.nvim_del_keymap("n", m.lhs) end
   end
   S.keymaps = {}
   local lhss = {}
@@ -177,7 +191,8 @@ function M.apply_keymaps(cfg, S)
     if lhs and (cfg.replies or not a.replies) then
       local rhs = M.plug(a.name)
       vim.keymap.set("n", lhs, rhs, { remap = true, desc = a.desc })
-      S.keymaps[#S.keymaps + 1] = { lhs = vim.fn.maparg(lhs, "n", false, true).lhs, rhs = rhs }
+      local d = vim.fn.maparg(lhs, "n", false, true)
+      S.keymaps[#S.keymaps + 1] = { lhs = d.lhs, raw = d.lhsraw or d.lhs, rhs = rhs }
       lhss[#lhss + 1] = lhs
     end
   end

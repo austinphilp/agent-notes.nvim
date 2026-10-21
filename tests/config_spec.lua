@@ -65,6 +65,12 @@ T.test("bad options raise a clear error and change nothing", function()
     T.raises("AgentNotes.setup: " .. needle, function() AgentNotes.setup(opts) end)
   end
   T.eq("inline", AgentNotes.config().display, "unchanged")
+  local before = vim.tbl_map(hl, { "AgentNoteInfo", "AgentNoteWarn" })
+  T.raises(
+    "highlights.warn",
+    function() AgentNotes.setup { highlights = { info = { fg = "#111111" }, warn = { fg = "notacolour" } } } end
+  )
+  T.eq(before, vim.tbl_map(hl, { "AgentNoteInfo", "AgentNoteWarn" }), "highlights unchanged")
 end)
 
 T.test("unknown keys warn and are ignored", function()
@@ -96,8 +102,10 @@ T.test("highlights options override the groups and survive :colorscheme", functi
   vim.cmd.colorscheme "default"
   check "after :colorscheme"
   AgentNotes.setup()
+  T.eq({ link = "DiagnosticInfo" }, hl "AgentNoteInfo", "dropped by a later setup")
+  T.eq({ link = "Comment" }, hl "AgentNoteStep", "link dropped by a later setup")
   vim.cmd.colorscheme "default"
-  T.eq("DiagnosticInfo", hl("AgentNoteInfo").link, "dropped by a later setup")
+  T.eq("DiagnosticInfo", hl("AgentNoteInfo").link, "and after :colorscheme")
 end)
 
 T.test("the user's own :hi wins over the default links", function()
@@ -140,7 +148,7 @@ T.test("replies off disables replying but keeps notes", function()
   AgentNotes.setup()
 end)
 
-T.test("replies off closes an open chat and hides the reply hint", function()
+T.test("replies off keeps an open chat and its draft, and hides the reply hint", function()
   AgentNotes.setup()
   vim.cmd.edit(a)
   AgentNotes.add { file = a, line = 1, text = "chat", channel = AgentNotes.channel "hint" }
@@ -157,8 +165,13 @@ T.test("replies off closes an open chat and hides the reply hint", function()
   AgentNotes.reply()
   T.ok(AgentNotes._state.chat ~= nil, "chat open")
   vim.cmd "stopinsert"
+  local chat = AgentNotes._state.chat
+  api.nvim_buf_set_lines(api.nvim_win_get_buf(chat.input), 0, -1, false, { "draft" })
   AgentNotes.setup { replies = false }
-  T.ok(AgentNotes._state.chat == nil, "chat closed")
+  T.ok(api.nvim_win_is_valid(chat.input), "chat stays open")
+  T.eq({ "draft" }, api.nvim_buf_get_lines(api.nvim_win_get_buf(chat.input), 0, -1, false), "draft kept")
+  api.nvim_win_close(chat.input, true)
+  T.ok(vim.wait(1000, function() return AgentNotes._state.chat == nil end), "chat closed")
   AgentNotes.show()
   T.ok(not float_text():find("reply", 1, true), "no reply hint: " .. float_text())
   AgentNotes.show()

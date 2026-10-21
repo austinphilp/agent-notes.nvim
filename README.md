@@ -72,7 +72,7 @@ A session that nobody stops quits on its own once its Claude Code process has ex
 
 ## Configure
 
-Call `require("agent-notes").setup(opts)`. lazy.nvim calls it for you with the spec's `opts`. Without a call, or with no `opts`, the plugin uses the defaults below. When `setup()` has not run by the time startup finishes (`VimEnter`), the plugin maps the default keys itself.
+Call `require("agent-notes").setup(opts)`. lazy.nvim calls it for you with the spec's `opts`. Without a call, or with no `opts`, the plugin uses the defaults below. Until `setup()` runs, the plugin maps the default keys when its plugin file loads, as earlier versions did, so your config can still remap or delete them.
 
 These are the defaults:
 
@@ -169,7 +169,8 @@ With `replies = false`, you cannot reply to the agent:
 - `AgentNotes.channel()` raises `AgentNotes: replies are off (setup option replies = false)` and creates no file.
 - `AgentNotes.add{channel = ...}` adds the note without its channel, so the agent's notes still show.
 - `AgentNotes.respond(id, text)` still adds the agent's answer to the note's thread and notifies you. It writes to a channel file only for a note that got its channel before replies were turned off.
-- A chat window open at the time of the `setup()` call closes.
+- A chat window that is already open when `setup()` turns replies off stays open, so text you are typing in it is not lost. Sending from it still works.
+- `AgentNotes.replies()` still prints the replies you sent before.
 
 The `nvim-review` skill reads the option and does not open a channel or watch for replies.
 
@@ -212,7 +213,7 @@ vim.keymap.set("n", "[n", "<Plug>(AgentNotesPrev)")
 
 When `setup()` maps different keys from an earlier call, it removes the keys it mapped before, unless you mapped them to something else since. `<Leader>` takes the value of `mapleader` when the keys are mapped, so set `mapleader` before lazy.nvim loads plugins.
 
-With which-key.nvim, the keys share a group named "Agent notes". The group's prefix is the part that the mapped keys share, such as `<Leader>a`. The plugin adds no group when the shared part is shorter than two keys.
+With which-key.nvim, the keys share a group named "Agent notes". The group's prefix is the part that the mapped keys share, such as `<Leader>a`. The plugin adds no group when the shared part is shorter than two keys. which-key keeps a group that an earlier `setup()` call added.
 
 The note float and its footer name the key mapped to `<Plug>(AgentNotesReply)` and `<Plug>(AgentNotesEnter)`, or the `:AgentNotes` command when no key is mapped.
 
@@ -228,7 +229,7 @@ The plugin keeps reply channels, the `<id>.jsonl` files created by `AgentNotes.c
 
 Version 0.3.0 no longer saves the autofloat toggle. The plugin does not read `stdpath("state")/agent-notes/settings.json` or the older `claude-notes/settings.json`, and it does not delete them. If you had turned the float on step off, set `display = "inline"` instead.
 
-The keys are now mapped to `<Plug>` maps by `setup()`, or at `VimEnter` without a `setup()` call, instead of when the plugin file loads. `<Leader>ai` is new.
+The keys now map to `<Plug>` maps, and `setup()` replaces them with the keys in `keymaps`. `<Leader>ai` is new.
 
 ## Keys and commands
 

@@ -1,6 +1,7 @@
 -- Registers :AgentNotes and a <Plug>(AgentNotes...) map per action, and loads the
--- module so agents can call the global AgentNotes table. setup() maps the keys to
--- the <Plug> maps; without a setup() call, the default keys are mapped at VimEnter.
+-- module so agents can call the global AgentNotes table. Unless setup() has already
+-- run, maps the default keys to the <Plug> maps now, as before setup() existed, so
+-- the user's config can still override or delete them; setup() replaces them.
 if vim.g.loaded_agent_notes then return end
 vim.g.loaded_agent_notes = true
 
@@ -47,14 +48,4 @@ api.nvim_create_user_command("AgentNotes", function(o)
 end, { nargs = "?", bar = true, complete = complete, desc = "Agent notes" })
 
 local notes = require "agent-notes"
-
--- A config's own setup() call, or lazy.nvim's, comes before VimEnter. When this file
--- loads after startup, setup() may follow right after it, so wait a tick.
-local function defaults()
-  if not notes._state.opts then notes.setup() end
-end
-if vim.v.vim_did_enter == 1 then
-  vim.schedule(defaults)
-else
-  api.nvim_create_autocmd("VimEnter", { once = true, callback = defaults })
-end
+if not notes._state.opts then config.apply_keymaps(notes._state.config, notes._state) end

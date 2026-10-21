@@ -643,11 +643,12 @@ api.nvim_create_autocmd("BufReadPost", {
 --- and then changes nothing.
 function M.setup(opts)
   local cfg = config.resolve(opts)
-  config.apply_highlights(cfg)
+  config.check_highlights(cfg)
+  config.apply_highlights(cfg, S.config)
   S.opts, S.config = opts or {}, cfg
   local display = config.DISPLAY[cfg.display]
   S.inline, S.autofloat = display.inline, display.float
-  if not cfg.replies then C.replies.close_chat() end
+  -- A chat already open stays open with replies off, so a draft in it is not lost.
   config.apply_keymaps(cfg, S)
   require("agent-notes.socket").enable(cfg.socket)
   render_all()

@@ -104,6 +104,15 @@ T.test("a key the user remapped since setup is left alone", function()
   AgentNotes.setup()
 end)
 
+T.test("a buffer-local map on the same key does not keep a stale default", function()
+  AgentNotes.setup()
+  vim.keymap.set("n", "<Leader>an", "<Nop>", { buffer = true })
+  AgentNotes.setup { keymaps = { next = "]n" } }
+  vim.keymap.del("n", "<Leader>an", { buffer = true })
+  T.eq(with { ["\\an"] = false, ["]n"] = { "<Plug>(AgentNotesNext)", "Next agent note" } }, mapped())
+  AgentNotes.setup()
+end)
+
 T.test("replies = false leaves the reply key unmapped", function()
   AgentNotes.setup { replies = false }
   T.eq(with { ["\\ar"] = false }, mapped())
@@ -167,8 +176,32 @@ T.test(
 )
 
 T.test(
-  "setup() before the plugin file loads, as with a package, keeps its keys",
-  function() T.eq({}, startup { RTP, "require('agent-notes').setup { keymaps = false }" }) end
+  "setup() after the plugin file loads, as lazy.nvim calls it, leaves no stale defaults",
+  function()
+    T.eq(
+      with { ["\\an"] = false, ["]n"] = { "<Plug>(AgentNotesNext)", "Next agent note" } },
+      startup {
+        RTP,
+        "vim.cmd.runtime 'plugin/agent-notes.lua'",
+        "require('agent-notes').setup { keymaps = { next = ']n' } }",
+      }
+    )
+  end
+)
+
+T.test(
+  "without setup() the user's config can override or delete a default key",
+  function()
+    T.eq(
+      with { ["\\an"] = false, ["\\ar"] = false },
+      startup {
+        RTP,
+        "vim.cmd.runtime 'plugin/agent-notes.lua'",
+        "vim.keymap.set('n', '<Leader>an', '<Cmd>echo \\'mine\\'<CR>')",
+        "vim.keymap.del('n', '<Leader>ar')",
+      }
+    )
+  end
 )
 
 T.test("a plugin loaded after startup maps the defaults, or setup()'s keys", function()
