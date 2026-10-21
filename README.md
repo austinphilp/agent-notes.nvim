@@ -211,7 +211,7 @@ vim.keymap.set("n", "]n", "<Plug>(AgentNotesNext)")
 vim.keymap.set("n", "[n", "<Plug>(AgentNotesPrev)")
 ```
 
-When `setup()` maps different keys from an earlier call, it removes the keys it mapped before. A key you remapped or deleted since stays as you left it, even when a later `setup()` call or `:AgentNotes reload` asks for the same key again. `<Leader>` takes the value of `mapleader` when the keys are mapped, so set `mapleader` before lazy.nvim loads plugins.
+When `setup()` maps different keys from an earlier call, it removes the keys it mapped before. A key you remapped or deleted since is yours for the rest of the session: no later `setup()` call or `:AgentNotes reload` maps it again, for any action. `<Leader>` takes the value of `mapleader` when the keys are mapped, so set `mapleader` before lazy.nvim loads plugins.
 
 With which-key.nvim, the keys share a group named "Agent notes". The group's prefix is the part that the mapped keys share, such as `<Leader>a`. The plugin adds no group when the shared part is shorter than two keys. which-key keeps a group that an earlier `setup()` call added.
 

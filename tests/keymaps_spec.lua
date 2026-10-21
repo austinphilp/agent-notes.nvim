@@ -131,10 +131,31 @@ T.test("reload and setup() leave keys the user remapped or deleted since", funct
   T.eq("", vim.fn.maparg("<Leader>ar", "n"), "deleted key stays deleted")
   AgentNotes.setup { keymaps = { reply = "]r" } }
   T.eq("<Plug>(AgentNotesReply)", vim.fn.maparg("]r", "n"), "a new key for the action is mapped")
-  vim.keymap.del("n", "<Leader>an")
+  -- Even after a call that maps none of them, or another key for the action.
+  AgentNotes.setup { keymaps = false }
   AgentNotes.setup { keymaps = { next = "]n" } }
+  AgentNotes.setup { keymaps = { prev = "<leader>an" } }
+  T.eq("<Cmd>echo 'mine'<CR>", vim.fn.maparg("<Leader>an", "n"), "kept after round trips and for another action")
+  vim.keymap.del("n", "<Leader>an")
   AgentNotes.setup()
-  T.eq(DEFAULTS, mapped(), "back to the defaults once the user's key is gone")
+  T.eq(with { ["\\an"] = false, ["\\ar"] = false }, mapped(), "the user's keys stay unmapped")
+  AgentNotes._state.user_keys = {}
+  AgentNotes.setup()
+end)
+
+T.test("keys follow a new mapleader and setup() leaves no scratch buffer", function()
+  AgentNotes.setup()
+  local bufs, events = #vim.api.nvim_list_bufs(), 0
+  local id = vim.api.nvim_create_autocmd({ "BufNew", "BufWipeout" }, { callback = function() events = events + 1 end })
+  vim.g.mapleader = " "
+  AgentNotes.setup()
+  vim.api.nvim_del_autocmd(id)
+  T.eq(bufs, #vim.api.nvim_list_bufs(), "no buffer left")
+  T.eq(0, events, "no buffer autocmds")
+  T.eq("<Plug>(AgentNotesNext)", vim.fn.maparg("<Space>an", "n"), "mapped under the new leader")
+  T.eq("", vim.fn.maparg("\\an", "n"), "old leader key removed")
+  vim.g.mapleader = nil
+  AgentNotes.setup()
 end)
 
 T.test("a buffer-local map on the same key does not keep a stale default", function()

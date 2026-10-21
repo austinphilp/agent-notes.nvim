@@ -123,6 +123,32 @@ end
 
 local check_ns = api.nvim_create_namespace "agent_notes_check"
 
+-- Maps each of cfg's keys buffer-locally in a scratch buffer, with no autocmds, and
+-- returns the key bytes nvim stores for each action, so keys compare as nvim sees
+-- them (<Leader> resolved, case of <...> ignored). Raises on a key nvim rejects.
+local function key_bytes(cfg)
+  local out = {}
+  local ei = vim.o.eventignore
+  vim.o.eventignore = "all"
+  local buf = api.nvim_create_buf(false, true)
+  local ok, err = pcall(function()
+    for name, lhs in pairs(cfg.keymaps or {}) do
+      if lhs then
+        if lhs:lower():find "^<plug>" then fail("keymaps.%s: a <Plug> map cannot be a key", name) end
+        local set, msg = pcall(vim.keymap.set, "n", lhs, "<Nop>", { buffer = buf, desc = name })
+        if not set then fail("keymaps.%s: %s", name, msg) end
+        for _, m in ipairs(api.nvim_buf_get_keymap(buf, "n")) do
+          if m.desc == name then out[name] = m.lhsraw or m.lhs end
+        end
+      end
+    end
+  end)
+  api.nvim_buf_delete(buf, { force = true })
+  vim.o.eventignore = ei
+  if not ok then error(err, 0) end
+  return out
+end
+
 --- Raises on a highlight spec or key that nvim would reject, trying each in a
 --- scratch namespace or buffer, so a failed setup() changes nothing.
 function M.check(cfg)
@@ -130,20 +156,7 @@ function M.check(cfg)
     local ok, err = pcall(api.nvim_set_hl, check_ns, "AgentNoteCheck", spec)
     if not ok then fail("highlights.%s: %s", key, err) end
   end
-  local buf = api.nvim_create_buf(false, true)
-  for name, lhs in pairs(cfg.keymaps or {}) do
-    local ok, err = true, nil
-    if lhs and lhs:lower():find "^<plug>" then
-      ok, err = false, "a <Plug> map cannot be a key"
-    elseif lhs then
-      ok, err = pcall(vim.keymap.set, "n", lhs, "<Nop>", { buffer = buf })
-    end
-    if not ok then
-      api.nvim_buf_delete(buf, { force = true })
-      fail("keymaps.%s: %s", name, err)
-    end
-  end
-  api.nvim_buf_delete(buf, { force = true })
+  key_bytes(cfg)
 end
 
 --- Applies cfg's highlights now and after every :colorscheme. A group that prev
@@ -190,35 +203,31 @@ function M.group_prefix(lhss)
 end
 
 --- Maps cfg's keys to the <Plug> maps, after removing the keys an earlier call
---- mapped that still point at them. S.keymaps keeps the mapped keys across reloads.
+--- mapped that still point at them. A key the user remapped or deleted since then
+--- is the user's for the rest of the session: no later call maps it. S.keymaps and
+--- S.user_keys keep this across reloads.
 function M.apply_keymaps(cfg, S)
   -- Global maps only: a buffer-local map on the same key must not hide ours.
   local global = {}
   for _, m in ipairs(api.nvim_get_keymap "n") do
     global[m.lhsraw or m.lhs] = m.rhs
   end
-  -- Keys the user remapped or deleted since they were mapped here stay as they are.
-  -- They keep their record, so later calls leave them alone too.
-  local changed = {}
+  S.user_keys = S.user_keys or {}
   for _, m in ipairs(S.keymaps or {}) do
     if global[m.raw] == m.rhs then
       api.nvim_del_keymap("n", m.lhs)
     else
-      changed[m.name] = m
+      S.user_keys[m.raw] = true
     end
   end
   S.keymaps = {}
-  local lhss = {}
+  local bytes, lhss = key_bytes(cfg), {}
   for _, a in ipairs(M.ACTIONS) do
     local lhs = cfg.keymaps and cfg.keymaps[a.name]
-    local kept = changed[a.name]
-    if kept and kept.key == lhs then
-      S.keymaps[#S.keymaps + 1] = kept
-    elseif lhs and (cfg.replies or not a.replies) then
+    if lhs and (cfg.replies or not a.replies) and not S.user_keys[bytes[a.name]] then
       local rhs = M.plug(a.name)
       vim.keymap.set("n", lhs, rhs, { remap = true, desc = a.desc })
-      local d = vim.fn.maparg(lhs, "n", false, true)
-      S.keymaps[#S.keymaps + 1] = { name = a.name, key = lhs, lhs = d.lhs, raw = d.lhsraw or d.lhs, rhs = rhs }
+      S.keymaps[#S.keymaps + 1] = { lhs = vim.fn.keytrans(bytes[a.name]), raw = bytes[a.name], rhs = rhs }
       lhss[#lhss + 1] = lhs
     end
   end
