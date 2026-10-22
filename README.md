@@ -280,7 +280,7 @@ A JSON `null` field counts as absent.
 
 | Function | Effect |
 | --- | --- |
-| `list()` | Returns the notes in reading order as tables with `id`, `order`, `kind`, `file`, `line`, `end_line`, `text`, `links`, `thread`, `viewed`, and `first_viewed` and `last_viewed` (UTC times, `nil` until viewed). |
+| `list()` | Returns the notes in reading order as tables with `id`, `order`, `kind`, `file`, `line`, `end_line`, `text`, `links`, `thread`, `viewed`, and `first_viewed` and `last_viewed` (UTC times, `nil` until the plugin records a view). |
 | `summary()` | Prints and returns one line per note: `N. #id [kind] [viewed] path:lines  first line`, plus its links. The marker is `[viewed]` or `[unviewed]`. |
 | `viewed()` | Prints which notes the user has viewed, and returns `{ viewed = { ids }, unviewed = { ids } }`, each in reading order. See [Viewed notes](#viewed-notes). |
 | `jump(i)` | Shows the `i`-th note in reading order. |
@@ -316,8 +316,9 @@ The plugin records which notes the user has viewed, so an agent can tell which n
 - Steps to it with `next()`, `prev()` or `jump(i)`, selects it in the notes list, or follows a link to a line in its range.
 - Opens the note float or the chat with the note in it, including the float that opens on a step.
 - Rests the cursor for one second on a line in the note's range, in a normal file window, while inline notes are on and the note's first line, where its text shows, is on screen. Moving the cursor past a note does not count.
+- Rests the cursor for one second while the note's float is open, such as a float that opened before the user attached.
 
-Nothing counts while no UI is attached, so an agent that jumps to a note before you attach to a session does not mark it viewed. A note keeps its viewed state until it is cleared. A re-added note starts unviewed unless `add` gets `viewed = true`.
+Nothing counts while no UI is attached, so an agent that jumps to a note before you attach to a session does not mark it viewed. A jump the agent makes while you are attached counts, because it shows you the note. Selecting the item already selected in the notes list counts only through the rest rule above. A note keeps its viewed state until it is cleared. A re-added note starts unviewed unless `add` gets `viewed = true`; its view times then stay `nil`.
 
 `viewed()` and the `[viewed]` and `[unviewed]` markers in `summary()` report the state. The first view of a note that has a channel also appends a `view` event to the channel file, so the agent can read it after the session ends.
 

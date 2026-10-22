@@ -92,6 +92,17 @@ T.test("autofloat on a step marks the note", function()
   T.eq({ id }, viewed_ids())
 end)
 
+T.test("a float opened before the UI attached counts once the user rests there", function()
+  AgentNotes.setup { display = "float" }
+  attached = false
+  local id = AgentNotes.add { file = a, line = 2, text = "waiting" }
+  AgentNotes.jump(1)
+  attached = true
+  T.eq(false, viewed(id), "not before attaching")
+  api.nvim_exec_autocmds("UIEnter", {})
+  T.ok(vim.wait(DWELL * 2, function() return viewed(id) end), "viewed after attaching")
+end)
+
 T.test("opening the chat marks the note", function()
   AgentNotes.setup { display = "inline" }
   local channel = AgentNotes.channel "chat"

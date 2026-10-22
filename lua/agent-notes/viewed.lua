@@ -1,7 +1,8 @@
 -- Which notes the user has viewed, so the agent does not assume every note was read.
 -- A note counts as viewed when, with a UI attached, the user lands on it (stepping,
 -- the notes list or a link), sees it in the note float or the chat, or rests the
--- cursor on its lines for DWELL ms while its inline text is on screen. The first
+-- cursor for DWELL ms on its lines while its inline text is on screen, or while
+-- its float is open. The first
 -- view of a note with a channel appends a {"type":"view"} line to the channel file.
 return function(C)
   local api = vim.api
@@ -32,11 +33,14 @@ return function(C)
   --- Records a view of the notes on the cursor line, after landing there.
   function V.at_cursor() V.mark(C.notes_at_cursor()) end
 
-  -- The cursor has rested: count the notes on its line whose text shows inline,
-  -- under a first line that is on screen.
+  -- The cursor has rested: count the notes in an open float, which may have
+  -- opened before the user attached, and the notes on the cursor line whose text
+  -- shows inline, under a first line that is on screen.
   local function rest()
-    if not S.inline or not watched() then return end
-    if api.nvim_win_get_config(0).relative ~= "" or vim.bo.buftype ~= "" then return end
+    if not watched() then return end
+    local f = S.float
+    if f and api.nvim_win_is_valid(f.win) then V.mark(f.notes) end
+    if not S.inline or api.nvim_win_get_config(0).relative ~= "" or vim.bo.buftype ~= "" then return end
     local top, bottom = vim.fn.line "w0", vim.fn.line "w$"
     local seen = {}
     for _, n in ipairs(C.notes_at_cursor()) do

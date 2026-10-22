@@ -73,7 +73,7 @@ Write each note in plain spoken English, the way you would explain the code to a
 
 ## What the user has viewed
 
-Do not assume the user read your notes. The plugin marks a note viewed when, with the user attached, they step to it, pick it in the notes list, follow a link to it, open its float or chat, or rest the cursor on its lines for a second while its text shows. Your own `jump` before they attach does not count.
+Do not assume the user read your notes. The plugin marks a note viewed when, with the user attached, they step to it, pick it in the notes list, follow a link to it, open its float or chat, or rest the cursor on its lines for a second while its text shows. Your own `jump` before they attach does not count; a `jump` or `edit` after they attach does, since it puts the note in front of them.
 
 - `lua AgentNotes.viewed()` prints `viewed: #3 #5` and `unviewed: #7`, ids in reading order. `summary()` marks each line `[viewed]` or `[unviewed]`.
 - The first view of a note with a channel appends `{"type":"view", "note", "order", "file", "line", "excerpt", "time"}` to the channel file, so you can read it after the session ends. The reply Monitor's `"type":"reply"` filter skips these lines.
@@ -86,8 +86,8 @@ Notes track edits made in nvim, but not changes on disk: a reloaded buffer keeps
 1. If the session shows a PR worktree, move it to the new revision: `git -C <worktree> checkout --detach <new sha>`.
 2. Reload the unmodified buffers: `lua for _, b in ipairs(vim.api.nvim_list_bufs()) do if vim.api.nvim_buf_is_loaded(b) and vim.bo[b].buftype == '' and not vim.bo[b].modified then vim.cmd.checktime(b) end end`. This needs `autoread`, which is on by default. Tell the user about a changed file whose buffer has unsaved changes instead of reloading it.
 3. Read the notes with `lua print(vim.json.encode(AgentNotes.list()))` and keep each one's `text`, `kind`, `order` and `viewed`, plus the channel you gave it.
-4. For every note in a changed file, find its code in the new file and recompute `line` and `end_line`. Check notes outside the edited hunks too, since lines added or removed above them shift them. If the change altered what a note describes, rewrite its text, or drop it if it no longer applies.
-5. `clear` those files' notes and add them again with the new lines, passing `viewed=true` for notes the user had viewed and the same `channel`. Then `summary()` to check them.
+4. For every note in a changed file, find its code in the new file and recompute `line` and `end_line`. Check notes outside the edited hunks too, since lines added or removed above them shift them. If the change altered what a note describes, rewrite its text, or drop it if it no longer applies. Recompute `[[path:line]]` links into changed files too, in every note.
+5. `clear` those notes and add them again with the new lines, passing `viewed=true` for notes the user had viewed and the same `channel`. Then `summary()` to check them. Re-added notes get new ids and lose their threads, so map a later reply's old id to the new one before you `respond`.
 
 ## PR walkthroughs
 
@@ -101,8 +101,8 @@ Notes track edits made in nvim, but not changes on disk: a reloaded buffer keeps
 
 When the user asks for another round after the code changed, review only what changed since the last round, not the whole PR again.
 
-1. Fetch the new head (`git -C <repo> fetch origin pull/<n>/head`), move the worktree to it (`git -C <worktree> checkout --detach FETCH_HEAD`), then reposition the earlier notes as in [Keep notes in place when code changes](#keep-notes-in-place-when-code-changes). Clear them instead if the user prefers.
-2. Give the subagent the range `<last reviewed sha>..<new sha>` as its base and head, and ask for notes only on that diff. It writes them the same way, against the worktree files.
+1. Fetch the new head in the worktree and move it there: `git -C <worktree> fetch origin pull/<n>/head` and `git -C <worktree> checkout --detach FETCH_HEAD`. Then reposition the earlier notes as in [Keep notes in place when code changes](#keep-notes-in-place-when-code-changes). Clear them instead if the user prefers.
+2. Give the subagent the range `<last reviewed sha>..<new sha>` as its base and head, and ask for notes only on that diff. It writes them the same way, against the worktree files. If the PR was rebased, that diff also holds the base branch's changes; tell the subagent to compare with `git range-diff <old base>..<last reviewed sha> <new base>..<new sha>` and note only the PR's own changes.
 3. Add the new notes after the existing ones (drop their `order`, or offset it past the last note's), then `jump` to the first new note. Record the new head SHA as the base of the next round.
 
 ## Replies
