@@ -191,6 +191,7 @@ The plugin defines a `<Plug>` map for each action. `setup()` maps the keys in `k
 | `<Leader>ai` | `inline` | `<Plug>(AgentNotesInline)` | Toggle inline agent notes |
 | | | `<Plug>(AgentNotesReplies)` | Print replies to agent notes |
 | | | `<Plug>(AgentNotesSummary)` | Print agent notes summary |
+| | | `<Plug>(AgentNotesViewed)` | Print viewed agent notes |
 | | | `<Plug>(AgentNotesClear)` | Clear agent notes |
 | | | `<Plug>(AgentNotesReload)` | Reload agent-notes.nvim |
 
@@ -248,6 +249,7 @@ The keys below are the defaults; see [Keymaps](#keymaps) to change them.
 | `<Leader>ai` | `inline` | Toggles the virtual lines under notes, for this session. |
 | | `replies` | Prints your replies. |
 | | `summary` | Prints one line per note. |
+| | `viewed` | Prints which notes you have viewed and which you have not. |
 | | `clear` | Removes every note. |
 | | `reload` | Re-requires the Lua modules and keeps notes, channels and threads. If `setup()` has run, it calls `setup()` again with the same options. |
 
@@ -270,6 +272,7 @@ Adds one note and returns its id. Adding a note identical to an existing one ret
 | `text` | yes | Note text. `\n` starts a new line. `[[path:line]]` and `[[path:line\|label]]` are links. |
 | `order` | no | Position in reading order. Notes with equal orders keep call order. Defaults to after the last note. |
 | `channel` | no | A channel id or path from `channel()`, so the user can reply. Ignored while replies are off. |
+| `viewed` | no | `true` starts the note as viewed, without a view event. Use it to carry the state forward when re-adding a note the user has seen. |
 
 A JSON `null` field counts as absent.
 
@@ -277,8 +280,9 @@ A JSON `null` field counts as absent.
 
 | Function | Effect |
 | --- | --- |
-| `list()` | Returns the notes in reading order as tables with `id`, `order`, `kind`, `file`, `line`, `end_line`, `text`, `links` and `thread`. |
-| `summary()` | Prints and returns one line per note: `N. #id [kind] path:lines  first line`, plus its links. |
+| `list()` | Returns the notes in reading order as tables with `id`, `order`, `kind`, `file`, `line`, `end_line`, `text`, `links`, `thread`, `viewed`, and `first_viewed` and `last_viewed` (UTC times, `nil` until viewed). |
+| `summary()` | Prints and returns one line per note: `N. #id [kind] [viewed] path:lines  first line`, plus its links. The marker is `[viewed]` or `[unviewed]`. |
+| `viewed()` | Prints which notes the user has viewed, and returns `{ viewed = { ids }, unviewed = { ids } }`, each in reading order. See [Viewed notes](#viewed-notes). |
 | `jump(i)` | Shows the `i`-th note in reading order. |
 | `next()`, `prev()` | Show the next or previous note, wrapping at either end. |
 | `open()` | Opens the notes list. |
@@ -303,7 +307,19 @@ An agent reads the effective options with `AgentNotes.config()`, which returns a
 :lua print(vim.inspect(AgentNotes.config()))
 ```
 
-Check `replies` before you open a channel: with `replies = false`, `channel()` raises an error and `add` drops `channel`. `keymaps` holds the keys to tell the user, where `false` means unmapped. While replies are off, the `reply` key is unmapped whatever `keymaps.reply` holds. In versions before 0.3.0, `AgentNotes.config` is `nil`, and replies are always on.
+Check `replies` before you open a channel: with `replies = false`, `channel()` raises an error and `add` drops `channel`. `keymaps` holds the keys to tell the user, where `false` means unmapped. While replies are off, the `reply` key is unmapped whatever `keymaps.reply` holds. In versions before 0.3.0, `AgentNotes.config` is `nil`, and replies are always on. In versions before 0.4.0, `AgentNotes.viewed` is `nil`, and the plugin does not track viewed notes.
+
+### Viewed notes
+
+The plugin records which notes the user has viewed, so an agent can tell which notes were read. A note counts as viewed when, with a UI attached, the user does one of these:
+
+- Steps to it with `next()`, `prev()` or `jump(i)`, selects it in the notes list, or follows a link to a line in its range.
+- Opens the note float or the chat with the note in it, including the float that opens on a step.
+- Rests the cursor for one second on a line in the note's range, in a normal file window, while inline notes are on and the note's first line, where its text shows, is on screen. Moving the cursor past a note does not count.
+
+Nothing counts while no UI is attached, so an agent that jumps to a note before you attach to a session does not mark it viewed. A note keeps its viewed state until it is cleared. A re-added note starts unviewed unless `add` gets `viewed = true`.
+
+`viewed()` and the `[viewed]` and `[unviewed]` markers in `summary()` report the state. The first view of a note that has a channel also appends a `view` event to the channel file, so the agent can read it after the session ends.
 
 ### Reply channels
 
@@ -314,6 +330,14 @@ A channel is a JSONL file. Each reply and each `respond()` call appends one line
 ```
 
 `type` is `reply` for the user's messages and `response` for the agent's. An agent can watch the file for `"type":"reply"` lines, for example with `tail -n0 -F <path>`.
+
+The first time the user views a note, the plugin appends a `view` event with the same fields, except `text`:
+
+```json
+{"type":"view","note":3,"order":2,"file":"/abs/a.go","line":42,"excerpt":"first line of the note","time":"2026-10-20T15:00:00Z"}
+```
+
+Later views of the same note write nothing.
 
 ## Scripts
 

@@ -1,7 +1,7 @@
 -- Two-way replies. An agent creates a channel (a JSONL file) and passes it to each
 -- add() whose replies it wants. The user's replies and the agent's responses form each note's thread and
 -- are appended to the channel file as {"type":"reply"|"response", ...} lines, so an
--- agent can watch the file for "reply" lines.
+-- agent can watch the file for "reply" lines. agent-notes/viewed.lua adds "view" lines.
 return function(C)
   local api = vim.api
   local R = {}
@@ -50,24 +50,22 @@ return function(C)
     f:close()
   end
 
+  --- Appends a {type, note, order, file, line, excerpt} event plus fields to n's
+  --- channel file, when n has a channel.
+  function R.log(n, type, fields)
+    if not n.channel then return end
+    local line = C.range(n)
+    local event = { type = type, note = n.id, order = C.position(n), file = n.path, line = line, excerpt = n.lines[1] }
+    append(n.channel, vim.tbl_extend("error", event, fields))
+  end
+
   --- Adds a message to n's thread and, when n has a channel, to the channel file.
   function R.record(n, type, text)
     local time = os.date "!%Y-%m-%dT%H:%M:%SZ"
     n.thread = n.thread or {}
     n.thread[#n.thread + 1] = { who = type == "reply" and "you" or "agent", text = text, time = time }
     if C.S.chat and C.S.chat.note == n then refresh_chat() end
-    if not n.channel then return end
-    local line = C.range(n)
-    append(n.channel, {
-      type = type,
-      note = n.id,
-      order = C.position(n),
-      file = n.path,
-      line = line,
-      excerpt = n.lines[1],
-      text = text,
-      time = time,
-    })
+    R.log(n, type, { text = text, time = time })
   end
 
   -- The chat window for one note: a read-only history float (note text, then the
@@ -147,6 +145,7 @@ return function(C)
     end
     C.S.chat = { note = n, history = history, history_buf = history_buf, input = input, src_win = src_win }
     refresh_chat()
+    C.viewed.mark { n }
 
     local function send()
       local text = vim.trim(table.concat(api.nvim_buf_get_lines(input_buf, 0, -1, false), "\n"))

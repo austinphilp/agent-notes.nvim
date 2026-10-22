@@ -8,7 +8,7 @@ T.test("add returns ids and summary lists notes in reading order", function()
   local second = AgentNotes.add { file = b, line = 1, text = "See [[" .. a .. ":1|the start]]", order = 0 }
   T.ok(second == first + 1, "ids increase")
   T.eq(
-    ("1. #%d [info] %s:1  See ‹the start›  (links: the start -> %s:1)\n2. #%d [warn] %s:2-3  Second"):format(
+    ("1. #%d [info] [unviewed] %s:1  See ‹the start›  (links: the start -> %s:1)\n2. #%d [warn] [unviewed] %s:2-3  Second"):format(
       second,
       b,
       vim.fn.fnamemodify(a, ":~:."),

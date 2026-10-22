@@ -20,6 +20,7 @@ M.ACTIONS = {
   { name = "inline", key = "<Leader>ai", desc = "Toggle inline agent notes" },
   { name = "replies", desc = "Print replies to agent notes", replies = true },
   { name = "summary", desc = "Print agent notes summary" },
+  { name = "viewed", desc = "Print viewed agent notes" },
   { name = "clear", desc = "Clear agent notes" },
   { name = "reload", desc = "Reload agent-notes.nvim" },
 }

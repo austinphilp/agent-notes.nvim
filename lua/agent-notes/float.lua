@@ -16,7 +16,7 @@ return function(C)
     local f = C.S.float
     local row, col = unpack(api.nvim_win_get_cursor(f.win))
     for _, s in ipairs(f.spans) do
-      if s.row == row - 1 and col >= s.s and col < s.e then return C.goto_location(s.link.path, s.link.line) end
+      if s.row == row - 1 and col >= s.s and col < s.e then return C.follow_link(s.link) end
     end
     C.pick(f.links)
   end
@@ -149,6 +149,7 @@ return function(C)
       end,
     })
     if focus then api.nvim_set_current_win(win) end
+    C.viewed.mark(notes)
   end
 
   return F

@@ -3,8 +3,8 @@
 -- plugin/agent-notes.lua loads this at startup; `:AgentNotes reload` re-requires it
 -- and keeps existing notes. Notes show as a sign plus wrapped virtual lines under their first line, coloured by kind,
 -- track their lines through edits with extmarks, and never modify the file.
--- API: AgentNotes.add{file=, line=, end_line=, kind=, text=, order=, channel=}, open(),
--- next(), prev(), jump(i), show(), enter(), follow(), list(), summary(),
+-- API: AgentNotes.add{file=, line=, end_line=, kind=, text=, order=, channel=, viewed=}, open(),
+-- next(), prev(), jump(i), show(), enter(), follow(), list(), summary(), viewed(),
 -- clear([file | {file=, channel=}]), channel([id]), respond(id, text), reply(), replies([channel]),
 -- autofloat([on]), inline([on]), setup(opts), config().
 -- Links in text: [[path:line]] or [[path:line|label]]. Helpers live in agent-notes/*.lua.
@@ -112,7 +112,7 @@ local C = {
   position = position,
   config = config,
 }
-for _, name in ipairs { "text", "float", "diff", "replies" } do
+for _, name in ipairs { "text", "float", "diff", "replies", "viewed" } do
   C[name] = require("agent-notes." .. name)(C)
 end
 C.close_float = C.float.close
@@ -253,9 +253,12 @@ function C.goto_location(path, line, done)
   done()
 end
 
+-- Shows a link's target; landing there counts as viewing the notes on that line.
+function C.follow_link(link) C.goto_location(link.path, link.line, C.viewed.at_cursor) end
+
 function C.pick(links)
   local function go(l)
-    if l then C.goto_location(l.path, l.line) end
+    if l then C.follow_link(l) end
   end
   if #links == 0 then
     vim.notify("This note has no links", vim.log.levels.WARN)
@@ -292,6 +295,18 @@ local function qf_sync()
   end
   vim.fn.setqflist({}, "r", { id = S.qf_id, title = TITLE, items = items })
   vim.fn.setqflist({}, "a", { id = S.qf_id, idx = idx })
+  S.qf_idx = idx
+end
+
+-- The note the user selected in the notes list (<CR>, :cc, :cnext) since the last
+-- check, if any.
+function C.qf_selected()
+  if not qf_valid() then return end
+  local idx = vim.fn.getqflist({ id = S.qf_id, idx = 0 }).idx
+  if idx == S.qf_idx then return end
+  S.qf_idx = idx
+  local item = vim.fn.getqflist({ id = S.qf_id, items = 1 }).items[idx]
+  return item and by_id(item.user_data)
 end
 
 -- quickfixtextfunc: "path|line| N. ● kind: first line" keeps the qf syntax highlighting.
@@ -321,6 +336,7 @@ local function validate(spec)
     error(("AgentNotes.add: bad line range %s-%s"):format(tostring(spec.line), tostring(spec.end_line)), 0)
   end
   if spec.order ~= nil and not tonumber(spec.order) then error("AgentNotes.add: order must be a number", 0) end
+  if spec.viewed ~= nil and type(spec.viewed) ~= "boolean" then error("AgentNotes.add: viewed must be a boolean", 0) end
   return kind, math.floor(line), math.floor(end_line)
 end
 
@@ -395,7 +411,10 @@ function M.add(spec)
   for _, n in ipairs(S.notes) do
     local l, e = range(n)
     local same = n.path == path and l == line and e == end_line and n.kind == kind and n.text == spec.text
-    if same and n.channel == channel then return n.id end
+    if same and n.channel == channel then
+      n.viewed = n.viewed or spec.viewed
+      return n.id
+    end
     max_order = math.max(max_order, n.order)
   end
   S.seq = S.seq + 1
@@ -412,6 +431,8 @@ function M.add(spec)
     links = links,
     order = tonumber(spec.order) or max_order + 1,
     channel = channel,
+    -- Carried forward when the agent re-adds a note the user has seen; no view event.
+    viewed = spec.viewed,
   }
   S.notes[#S.notes + 1] = n
   anchor(n)
@@ -434,18 +455,23 @@ function M.list()
       text = n.text,
       links = n.links,
       thread = n.thread or {},
+      viewed = n.viewed or false,
+      first_viewed = n.first_viewed,
+      last_viewed = n.last_viewed,
     }
   end, ordered())
 end
 
---- Prints and returns one line per note in reading order: "N. #id [kind] path:lines  first line".
+--- Prints and returns one line per note in reading order:
+--- "N. #id [kind] [viewed|unviewed] path:lines  first line".
 function M.summary()
   local out = {}
   for i, n in ipairs(ordered()) do
     local l, e = range(n)
     local links = vim.tbl_map(function(k) return ("%s -> %s:%d"):format(k.label, rel(k.path), k.line) end, n.links)
     local suffix = #links > 0 and "  (links: " .. table.concat(links, ", ") .. ")" or ""
-    out[i] = ("%d. #%d [%s] %s:%s  %s%s"):format(i, n.id, n.kind, n.path, span(l, e), n.lines[1], suffix)
+    local seen = n.viewed and "viewed" or "unviewed"
+    out[i] = ("%d. #%d [%s] [%s] %s:%s  %s%s"):format(i, n.id, n.kind, seen, n.path, span(l, e), n.lines[1], suffix)
   end
   local s = #out > 0 and table.concat(out, "\n") or "No agent notes"
   print(s)
@@ -458,6 +484,7 @@ function M.jump(i)
   if not n then return print "No agent notes" end
   S.current = n.id
   C.goto_location(n.path, (range(n)), function()
+    C.viewed.mark { n }
     if S.autofloat then C.float.open({ n }, false) end
     qf_sync()
   end)
@@ -576,6 +603,7 @@ function M.clear(filter)
   return removed
 end
 
+M.viewed = C.viewed.report
 M.channel = C.replies.channel
 M.reply = C.replies.reply
 M.replies = C.replies.replies
