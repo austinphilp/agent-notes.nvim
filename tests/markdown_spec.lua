@@ -50,6 +50,25 @@ T.test("many unmatched markers render in linear time", function()
   T.ok(vim.uv.hrtime() - start < 1e9, "under a second")
 end)
 
+T.test("links keep their columns after bullet and quote prefixes and next to _", function()
+  -- "‹a›" is 9 bytes: two 3-byte marks around a 3-byte label.
+  local src = { "- ‹aaa› x", "  > ‹bbb›", "x ‹ccc›_i_ _‹ddd›_" }
+  local spans = {
+    { row = 1, s = 2, e = 11, link = 1 },
+    { row = 2, s = 4, e = 13, link = 2 },
+    { row = 3, s = 2, e = 11, link = 3 },
+    { row = 3, s = 16, e = 25, link = 4 },
+  }
+  local lines, marks, moved = md.render(src, spans)
+  T.eq({ "• ‹aaa› x", "  │ ‹bbb›", "x ‹ccc›i ‹ddd›" }, lines)
+  local shown = {}
+  for _, s in ipairs(moved) do
+    shown[#shown + 1] = { s.link, lines[s.row]:sub(s.s + 1, s.e) }
+  end
+  T.eq({ { 1, "‹aaa›" }, { 2, "‹bbb›" }, { 3, "‹ccc›" }, { 4, "‹ddd›" } }, shown)
+  T.eq({ "i", "‹ddd›" }, { lines[3]:sub(marks[2].s + 1, marks[2].e), lines[3]:sub(marks[3].s + 1, marks[3].e) })
+end)
+
 T.test("code spans bind before emphasis, and links keep their columns in code blocks", function()
   T.eq({ "a b* c", { { "b*", "AgentNoteCode" }, { "a b* c", "AgentNoteItalic" } } }, { one "*a `b*` c*" })
   local lines, _, spans = md.render({ "```", "x ‹y›" }, { { row = 2, s = 2, e = 9, link = 1 } })

@@ -12,7 +12,12 @@ return function()
   }
 
   local function blank(c) return c == "" or c:match "%s" ~= nil end
-  local function word(c) return c:match "[%w\128-\255]" ~= nil end
+  -- Whether the character that ends (before) or starts at byte i of s belongs to a
+  -- word: alphanumerics and non-ASCII letters, but not the ‹ › around a link label.
+  local function word(s, i, before)
+    local mark = before and s:sub(i - 2, i) or s:sub(i, i + 2)
+    return s:sub(i, i):match "[%w\128-\255]" ~= nil and mark ~= "‹" and mark ~= "›"
+  end
 
   -- Splits src from byte from into text, links, code spans and delimiter runs.
   -- links maps a link's first byte in src to its span.
@@ -66,9 +71,9 @@ return function()
         -- A run opens when text follows it and closes when text precedes it; _ never
         -- does inside a word, so snake_case stays as written. ~ marks only as ~~.
         local ok = c ~= "~" or n == 2
-        local open = ok and not blank(after) and not (c == "_" and word(before))
-        local close = ok and not blank(before) and not (c == "_" and word(after))
-        tokens[#tokens + 1] = { a = i, b = i + n - 1, ch = c, n = n, open = open, close = close, lead = 0, trail = 0 }
+        local open = ok and not blank(after) and not (c == "_" and word(src, i - 1, true))
+        local close = ok and not blank(before) and not (c == "_" and word(src, i + n))
+        tokens[#tokens + 1] = { a = i, b = i + n - 1, ch = c, n = n, open = open, close = close }
         i = i + n
       else
         text(i, i)
@@ -92,7 +97,7 @@ return function()
           end
           local o = stack[k]
           local use = math.min(2, o.n, t.n)
-          o.n, o.trail, t.n, t.lead = o.n - use, o.trail + use, t.n - use, t.lead + use
+          o.n, t.n = o.n - use, t.n - use
           out[#out + 1] = { o = o, t = t, hl = HL[t.ch][use] }
           for m = #stack, o.n > 0 and k + 1 or k, -1 do
             open[stack[m].ch] = open[stack[m].ch] - 1
