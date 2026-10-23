@@ -35,6 +35,12 @@ M.HIGHLIGHTS = {
   issue = { "AgentNoteIssue", "DiagnosticError" },
   you = { "AgentNoteYou", "DiagnosticOk" },
   step = { "AgentNoteStep", "Comment" },
+  bold = { "AgentNoteBold", "@markup.strong" },
+  italic = { "AgentNoteItalic", "@markup.italic" },
+  strike = { "AgentNoteStrike", "@markup.strikethrough" },
+  code = { "AgentNoteCode", "String" },
+  heading = { "AgentNoteHeading", "@markup.heading" },
+  quote = { "AgentNoteQuote", "Comment" },
 }
 
 -- display: whether notes show as virtual lines, and whether stepping opens the float.

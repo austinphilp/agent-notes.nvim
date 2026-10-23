@@ -61,7 +61,7 @@ lua AgentNotes.add{file='/abs/a.go', line=42, end_line=48, kind='warn', text='Re
 
 ### Write notes the user can read
 
-Write each note in plain spoken English, the way you would explain the code to a colleague at their desk. When `teach`, `how`, `why` or `unslop` skills are available, follow `teach` for how to explain, `how` for what the code does at runtime, `why` for the reasons behind it, and `unslop` for the prose. Run their workflows only when you lack those facts, not once per note. Notes are plain text, so skip diagrams and offers to go deeper.
+Write each note in plain spoken English, the way you would explain the code to a colleague at their desk. When `teach`, `how`, `why` or `unslop` skills are available, follow `teach` for how to explain, `how` for what the code does at runtime, `why` for the reasons behind it, and `unslop` for the prose. Run their workflows only when you lack those facts, not once per note. The float and chat show basic markdown, but inline notes show it as written, so keep markup light: `` `code` `` for identifiers, `**bold**` sparingly, no tables or diagrams, and no offers to go deeper.
 
 - Lead with what this code does and why it matters, in plain words. Mechanics come after, and only the ones the user needs.
 - One idea per note. A note that covers several behaviours becomes several notes, each on the line that does that thing, in reading order.

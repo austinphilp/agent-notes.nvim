@@ -81,7 +81,7 @@ require("agent-notes").setup {
   socket = false,
   display = "both", -- "both", "inline" or "float"
   replies = true,
-  highlights = {}, -- info, warn, issue, you, step: arguments for nvim_set_hl
+  highlights = {}, -- info, warn, issue, you, step, bold, italic, strike, code, heading, quote: arguments for nvim_set_hl
   keymaps = {
     next = "<Leader>an",
     prev = "<Leader>ap",
@@ -101,7 +101,7 @@ require("agent-notes").setup {
 | `socket` | boolean | `false` | Listens on a well-known socket that `bin/nvim-mcp` looks for. See [Agent socket](#agent-socket). |
 | `display` | `"both"`, `"inline"` or `"float"` | `"both"` | How notes show. See [Display modes](#display-modes). |
 | `replies` | boolean | `true` | Lets you reply to the agent. See [Turn replies off](#turn-replies-off). |
-| `highlights` | table | `{}` | Colours per group, keyed `info`, `warn`, `issue`, `you` and `step`. See [Colours](#colours). |
+| `highlights` | table | `{}` | Colours per group, keyed `info`, `warn`, `issue`, `you`, `step`, `bold`, `italic`, `strike`, `code`, `heading` and `quote`. See [Colours](#colours). |
 | `keymaps` | table or `false` | the `<Leader>a` keys | Normal-mode keys per action. `false` maps no keys. See [Keymaps](#keymaps). |
 
 `setup()` checks the options before it changes anything. A wrong type, an unknown `display` value, a highlight spec that `nvim_set_hl()` rejects, or a key that nvim cannot map raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. A `keymaps` entry cannot be a `<Plug>` map, and two entries cannot name the same key. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
@@ -137,7 +137,7 @@ The toggles are not saved. Each new nvim and each `setup()` call starts again fr
 
 ### Colours
 
-Each note's kind is shown by colour only. Each group links to a diagnostic colour by default:
+Each note's kind is shown by colour only. Each kind's group links to a diagnostic colour by default, and each markdown group to a markup group:
 
 | `highlights` key | Group | Default link | Used for |
 | --- | --- | --- | --- |
@@ -146,6 +146,12 @@ Each note's kind is shown by colour only. Each group links to a diagnostic colou
 | `issue` | `AgentNoteIssue` | `DiagnosticError` | `issue` notes |
 | `you` | `AgentNoteYou` | `DiagnosticOk` | your replies in a thread |
 | `step` | `AgentNoteStep` | `Comment` | the step number, such as `3/10` |
+| `bold` | `AgentNoteBold` | `@markup.strong` | `**bold**` in the float and chat |
+| `italic` | `AgentNoteItalic` | `@markup.italic` | `*italic*` in the float and chat |
+| `strike` | `AgentNoteStrike` | `@markup.strikethrough` | `~~struck~~` in the float and chat |
+| `code` | `AgentNoteCode` | `String` | code spans and fenced code blocks in the float and chat |
+| `heading` | `AgentNoteHeading` | `@markup.heading` | `#` headings in the float and chat |
+| `quote` | `AgentNoteQuote` | `Comment` | `>` quotes in the float and chat |
 
 To change a colour, pass the `nvim_set_hl()` arguments for its group:
 
@@ -269,12 +275,22 @@ Adds one note and returns its id. Adding a note identical to an existing one ret
 | `line` | yes | First line, 1-based. |
 | `end_line` | no | Last line. Defaults to `line`. |
 | `kind` | no | `info` (default), `warn` or `issue`. |
-| `text` | yes | Note text. `\n` starts a new line. `[[path:line]]` and `[[path:line\|label]]` are links. |
+| `text` | yes | Note text. `\n` starts a new line. `[[path:line]]` and `[[path:line\|label]]` are links. The float and chat show basic markdown (see [Markdown](#markdown)). |
 | `order` | no | Position in reading order. Notes with equal orders keep call order. Defaults to after the last note. |
 | `channel` | no | A channel id or path from `channel()`, so the user can reply. Ignored while replies are off. |
 | `viewed` | no | `true` starts the note as viewed, without a view event. Use it to carry the state forward when re-adding a note the user has seen. |
 
 A JSON `null` field counts as absent.
+
+### Markdown
+
+The note float and the chat show note text and thread messages as basic markdown. The markers are hidden and the text is highlighted with the [Colours](#colours) groups:
+
+- `**bold**` or `__bold__`, `*italic*` or `_italic_`, `~~struck~~` and `` `code` ``. Underscores inside a word, as in `snake_case`, stay as they are.
+- `#` to `######` headings, `-`, `*` or `+` bullets (shown as `•`), and `>` quotes. Numbered lists show as written.
+- Fenced code blocks: the fence lines are hidden and the code shows as written. Markdown inside code is not rendered.
+
+Links work anywhere in the text, including inside bold. Inline notes under the code show the text as written.
 
 ### Other functions
 

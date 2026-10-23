@@ -1,5 +1,6 @@
--- The note float: note text (kind shown by colour only), its reply thread, and
--- links that <CR> follows. It closes when the cursor leaves the notes' lines.
+-- The note float: note text (kind shown by colour only) and its reply thread as
+-- basic markdown, and links that <CR> follows. It closes when the cursor leaves
+-- the notes' lines.
 return function(C)
   local api = vim.api
   local F = {}
@@ -31,23 +32,34 @@ return function(C)
         if hl then marks[#marks + 1] = { row = #lines - 1, e = #piece, hl = hl } end
       end
     end
+    -- Adds markdown text, with bar's kind bar on each line; returns its moved spans.
+    local function add_markdown(text_lines, text_spans, bar)
+      local base = #lines
+      local shown, styled, moved = C.markdown.render(text_lines, text_spans)
+      for _, l in ipairs(shown) do
+        lines[#lines + 1] = l
+        if bar then marks[#marks + 1] = { row = #lines - 1, bar = bar } end
+      end
+      for _, m in ipairs(styled) do
+        marks[#marks + 1] = { row = base + m.row - 1, s = m.s, e = m.e, hl = m.hl }
+      end
+      for _, s in ipairs(moved) do
+        s.row = base + s.row - 1
+      end
+      return moved
+    end
     for i, n in ipairs(notes) do
       if i > 1 then lines[#lines + 1] = "" end
-      local base = #lines
-      for _, l in ipairs(n.lines) do
-        lines[#lines + 1] = l
-        marks[#marks + 1] = { row = #lines - 1, bar = C.KINDS[n.kind].hl }
-      end
-      for _, s in ipairs(n.spans) do
+      for _, s in ipairs(add_markdown(n.lines, n.spans, C.KINDS[n.kind].hl)) do
         local link = n.links[s.link]
         links[#links + 1] = link
-        spans[#spans + 1] = { row = base + s.row - 1, s = s.s, e = s.e, link = link }
-        marks[#marks + 1] = { row = base + s.row - 1, s = s.s, e = s.e, hl = "Underlined" }
+        spans[#spans + 1] = { row = s.row, s = s.s, e = s.e, link = link }
+        marks[#marks + 1] = { row = s.row, s = s.s, e = s.e, hl = "Underlined" }
       end
       for _, m in ipairs(n.thread or {}) do
         lines[#lines + 1] = ""
         add(m.who .. ":", m.who == "you" and "AgentNoteYou" or C.KINDS[n.kind].hl)
-        add(m.text)
+        add_markdown(vim.split(m.text, "\n", { plain = true }))
       end
     end
     local keys = {}

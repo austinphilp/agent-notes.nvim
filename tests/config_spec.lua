@@ -27,6 +27,12 @@ local LINKS = {
   AgentNoteIssue = "DiagnosticError",
   AgentNoteYou = "DiagnosticOk",
   AgentNoteStep = "Comment",
+  AgentNoteBold = "@markup.strong",
+  AgentNoteItalic = "@markup.italic",
+  AgentNoteStrike = "@markup.strikethrough",
+  AgentNoteCode = "String",
+  AgentNoteHeading = "@markup.heading",
+  AgentNoteQuote = "Comment",
 }
 
 local function hl(name) return api.nvim_get_hl(0, { name = name }) end
@@ -92,7 +98,7 @@ T.test("unknown keys warn and are ignored", function()
   T.eq(DEFAULTS, AgentNotes.config())
 end)
 
-T.test("highlight groups link to diagnostic colours by default", function()
+T.test("highlight groups link to diagnostic and markup colours by default", function()
   AgentNotes.setup()
   for name, link in pairs(LINKS) do
     T.eq(link, hl(name).link, name)

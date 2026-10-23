@@ -112,7 +112,7 @@ local C = {
   position = position,
   config = config,
 }
-for _, name in ipairs { "text", "float", "diff", "replies", "viewed" } do
+for _, name in ipairs { "text", "markdown", "float", "diff", "replies", "viewed" } do
   C[name] = require("agent-notes." .. name)(C)
 end
 C.close_float = C.float.close
