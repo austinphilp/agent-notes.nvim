@@ -1,6 +1,6 @@
 {
   "name": "agent-notes",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Show, walk through and annotate code in your running Neovim: an nvim MCP server plus the nvim-review skill, for the agent-notes.nvim plugin.",
   "author": { "name": "Austin Philp", "url": "https://github.com/austinphilp" },
   "homepage": "https://github.com/austinphilp/agent-notes.nvim",
