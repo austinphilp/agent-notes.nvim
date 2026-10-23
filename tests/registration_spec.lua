@@ -1,7 +1,7 @@
 local T = dofile(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)) .. "/helpers.lua")
 
 local ACTIONS = {
-  "autofloat", "clear", "enter", "follow", "inline", "list", "next", "prev",
+  "autofloat", "clear", "enter", "follow", "inline", "lastreply", "list", "next", "prev",
   "reload", "replies", "reply", "show", "summary", "viewed",
 }
 
@@ -9,7 +9,7 @@ T.test("the global API table exists at startup", function()
   T.ok(type(AgentNotes) == "table" and AgentNotes == require "agent-notes", "AgentNotes")
   for _, name in ipairs {
     "add", "open", "next", "prev", "jump", "show", "enter", "follow", "list", "summary", "viewed", "clear",
-    "channel", "respond", "reply", "replies", "autofloat", "inline", "setup", "config",
+    "channel", "respond", "reply", "replies", "lastreply", "autofloat", "inline", "setup", "config",
   } do
     T.eq("function", type(AgentNotes[name]), name)
   end

@@ -60,10 +60,15 @@ return function(C)
   end
 
   --- Adds a message to n's thread and, when n has a channel, to the channel file.
+  --- An agent response stays unread until the user sees it in the float or chat.
   function R.record(n, type, text)
     local time = os.date "!%Y-%m-%dT%H:%M:%SZ"
     n.thread = n.thread or {}
     n.thread[#n.thread + 1] = { who = type == "reply" and "you" or "agent", text = text, time = time }
+    if type == "response" then
+      C.S.reply_seq = (C.S.reply_seq or 0) + 1
+      n.unread, n.reply_seq = (n.unread or 0) + 1, C.S.reply_seq
+    end
     if C.S.chat and C.S.chat.note == n then refresh_chat() end
     R.log(n, type, { text = text, time = time })
   end
@@ -97,6 +102,7 @@ return function(C)
       marks[#marks + 1] = { row = #lines - 1, e = #lines[#lines], hl = "Comment" }
     end
     C.float.paint(c.history_buf, lines, marks)
+    C.viewed.read { c.note }
     api.nvim_win_set_cursor(c.history, { #lines, 0 })
     api.nvim_win_call(c.history, function() vim.cmd "normal! zb" end)
     api.nvim_win_set_config(c.history, { title = (" Note %d/%d "):format(C.position(c.note), #C.S.notes) })
@@ -171,6 +177,49 @@ return function(C)
       callback = function() vim.schedule(R.close_chat) end,
     })
     vim.cmd "startinsert"
+  end
+
+  function R.close_toast()
+    local t = C.S.toast
+    C.S.toast = nil
+    if t and api.nvim_win_is_valid(t.win) then api.nvim_win_close(t.win, true) end
+  end
+
+  --- Shows "Reply on note #N" in the top right corner for the toast option's ms,
+  --- without focus. A reply while it shows replaces it and counts both.
+  function R.toast(n)
+    local ms = C.S.config.toast
+    if not ms then return end
+    local t = C.S.toast
+    if not (t and api.nvim_win_is_valid(t.win)) then
+      t = { count = 0, buf = api.nvim_create_buf(false, true) }
+      vim.bo[t.buf].bufhidden = "wipe"
+    end
+    t.count = t.count + 1
+    local key = C.config.key_for "lastreply"
+    local text = (" %s on note #%d%s "):format(
+      t.count > 1 and t.count .. " replies, latest" or "Reply",
+      C.position(n),
+      key and " · " .. key .. " to view" or ""
+    )
+    api.nvim_buf_set_lines(t.buf, 0, -1, false, { text })
+    local width = math.max(1, math.min(vim.fn.strdisplaywidth(text), vim.o.columns - 2))
+    local config = { relative = "editor", row = 1, col = math.max(0, vim.o.columns - width - 2), width = width, height = 1 }
+    if t.win then
+      api.nvim_win_set_config(t.win, config)
+    else
+      local new = { style = "minimal", border = "rounded", focusable = false, zindex = 250, noautocmd = true }
+      t.win = api.nvim_open_win(t.buf, false, vim.tbl_extend("force", config, new))
+    end
+    local hl = C.KINDS[n.kind].hl
+    vim.wo[t.win].winhighlight = "NormalFloat:" .. hl .. ",FloatBorder:" .. hl
+    C.S.toast = t
+    -- Only the latest reply's timer closes it.
+    t.seq = (t.seq or 0) + 1
+    local seq = t.seq
+    vim.defer_fn(function()
+      if C.S.toast == t and t.seq == seq then R.close_toast() end
+    end, ms)
   end
 
   --- Starts a reply to the note in the focused float or on the cursor line.

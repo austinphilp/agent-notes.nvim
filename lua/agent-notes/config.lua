@@ -16,6 +16,7 @@ M.ACTIONS = {
   { name = "enter", key = "<Leader>ae", desc = "Enter agent note" },
   { name = "follow", key = "<Leader>ag", desc = "Follow agent note link" },
   { name = "reply", key = "<Leader>ar", desc = "Reply to agent note", replies = true },
+  { name = "lastreply", key = "<Leader>aR", desc = "Show latest agent reply", replies = true },
   { name = "autofloat", key = "<Leader>af", desc = "Toggle agent note float on step" },
   { name = "inline", key = "<Leader>ai", desc = "Toggle inline agent notes" },
   { name = "replies", desc = "Print replies to agent notes", replies = true },
@@ -41,7 +42,11 @@ M.HIGHLIGHTS = {
   code = { "AgentNoteCode", "String" },
   heading = { "AgentNoteHeading", "@markup.heading" },
   quote = { "AgentNoteQuote", "Comment" },
+  unread = { "AgentNoteUnread", "DiagnosticHint" },
 }
+
+-- list_text: what each notes list entry shows after its step and sign.
+M.LIST_TEXT = { summary = true, text = true }
 
 -- display: whether notes show as virtual lines, and whether stepping opens the float.
 M.DISPLAY = {
@@ -55,7 +60,15 @@ function M.defaults()
   for _, a in ipairs(M.ACTIONS) do
     if a.key then keymaps[a.name] = a.key end
   end
-  return { socket = false, display = "both", replies = true, highlights = {}, keymaps = keymaps }
+  return {
+    socket = false,
+    display = "both",
+    replies = true,
+    list_text = "summary",
+    toast = 3000,
+    highlights = {},
+    keymaps = keymaps,
+  }
 end
 
 local function fail(msg, ...) error("AgentNotes.setup: " .. msg:format(...), 0) end
@@ -90,6 +103,19 @@ function M.resolve(opts)
       fail('display must be "both", "inline" or "float", got %s', vim.inspect(opts.display))
     end
     cfg.display = opts.display
+  end
+  if opts.list_text ~= nil then
+    if not M.LIST_TEXT[opts.list_text] then
+      fail('list_text must be "summary" or "text", got %s', vim.inspect(opts.list_text))
+    end
+    cfg.list_text = opts.list_text
+  end
+  if opts.toast ~= nil then
+    local ms = opts.toast
+    if ms ~= false and (type(ms) ~= "number" or ms <= 0 or ms ~= math.floor(ms)) then
+      fail("toast must be a whole number of milliseconds above 0, or false, got %s", vim.inspect(ms))
+    end
+    cfg.toast = ms
   end
   if opts.highlights ~= nil then
     expect("highlights", opts.highlights, "table")

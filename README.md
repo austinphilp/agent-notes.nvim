@@ -81,7 +81,9 @@ require("agent-notes").setup {
   socket = false,
   display = "both", -- "both", "inline" or "float"
   replies = true,
-  highlights = {}, -- info, warn, issue, you, step, bold, italic, strike, code, heading, quote: arguments for nvim_set_hl
+  list_text = "summary", -- "summary" or "text"
+  toast = 3000, -- ms, or false
+  highlights = {}, -- info, warn, issue, you, step, bold, italic, strike, code, heading, quote, unread: arguments for nvim_set_hl
   keymaps = {
     next = "<Leader>an",
     prev = "<Leader>ap",
@@ -90,6 +92,7 @@ require("agent-notes").setup {
     enter = "<Leader>ae",
     follow = "<Leader>ag",
     reply = "<Leader>ar",
+    lastreply = "<Leader>aR",
     autofloat = "<Leader>af",
     inline = "<Leader>ai",
   },
@@ -101,10 +104,12 @@ require("agent-notes").setup {
 | `socket` | boolean | `false` | Listens on a well-known socket that `bin/nvim-mcp` looks for. See [Agent socket](#agent-socket). |
 | `display` | `"both"`, `"inline"` or `"float"` | `"both"` | How notes show. See [Display modes](#display-modes). |
 | `replies` | boolean | `true` | Lets you reply to the agent. See [Turn replies off](#turn-replies-off). |
-| `highlights` | table | `{}` | Colours per group, keyed `info`, `warn`, `issue`, `you`, `step`, `bold`, `italic`, `strike`, `code`, `heading` and `quote`. See [Colours](#colours). |
+| `list_text` | `"summary"` or `"text"` | `"summary"` | What each entry in the notes list shows: the note's `summary`, falling back to the first line of its text, or always the first line. See [Notes list](#notes-list). |
+| `toast` | number or `false` | `3000` | How long, in milliseconds, the notice for an agent reply stays up. `false` turns it off. See [Notes list](#notes-list). |
+| `highlights` | table | `{}` | Colours per group, keyed `info`, `warn`, `issue`, `you`, `step`, `bold`, `italic`, `strike`, `code`, `heading`, `quote` and `unread`. See [Colours](#colours). |
 | `keymaps` | table or `false` | the `<Leader>a` keys | Normal-mode keys per action. `false` maps no keys. See [Keymaps](#keymaps). |
 
-`setup()` checks the options before it changes anything. A wrong type, an unknown `display` value, a highlight spec that `nvim_set_hl()` rejects, or a key that nvim cannot map raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. A `keymaps` entry cannot be a `<Plug>` map, and two entries cannot name the same key. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
+`setup()` checks the options before it changes anything. A wrong type, an unknown `display` or `list_text` value, a `toast` that is not a whole number above 0 or `false`, a highlight spec that `nvim_set_hl()` rejects, or a key that nvim cannot map raises an error such as `AgentNotes.setup: display must be "both", "inline" or "float", got "side"`. A `keymaps` entry cannot be a `<Plug>` map, and two entries cannot name the same key. An unknown key, at the top level or inside `highlights` or `keymaps`, prints a warning and is ignored.
 
 Calling `setup()` again replaces the earlier options: keys you leave out go back to their defaults. `:AgentNotes reload` calls `setup()` again with the same options.
 
@@ -152,6 +157,7 @@ Each note's kind is shown by colour only. Each kind's group links to a diagnosti
 | `code` | `AgentNoteCode` | `String` | code spans and fenced code blocks in the float and chat |
 | `heading` | `AgentNoteHeading` | `@markup.heading` | `#` headings in the float and chat |
 | `quote` | `AgentNoteQuote` | `Comment` | `>` quotes in the float and chat |
+| `unread` | `AgentNoteUnread` | `DiagnosticHint` | the thread tag in the notes list while it has unread agent messages |
 
 To change a colour, pass the `nvim_set_hl()` arguments for its group:
 
@@ -193,6 +199,7 @@ The plugin defines a `<Plug>` map for each action. `setup()` maps the keys in `k
 | `<Leader>ae` | `enter` | `<Plug>(AgentNotesEnter)` | Enter agent note |
 | `<Leader>ag` | `follow` | `<Plug>(AgentNotesFollow)` | Follow agent note link |
 | `<Leader>ar` | `reply` | `<Plug>(AgentNotesReply)` | Reply to agent note |
+| `<Leader>aR` | `lastreply` | `<Plug>(AgentNotesLastreply)` | Show latest agent reply |
 | `<Leader>af` | `autofloat` | `<Plug>(AgentNotesAutofloat)` | Toggle agent note float on step |
 | `<Leader>ai` | `inline` | `<Plug>(AgentNotesInline)` | Toggle inline agent notes |
 | | | `<Plug>(AgentNotesReplies)` | Print replies to agent notes |
@@ -251,6 +258,7 @@ The keys below are the defaults; see [Keymaps](#keymaps) to change them.
 | `<Leader>ae` | `enter` | Enters the note float, to scroll it or use its links. |
 | `<Leader>ag` | `follow` | Follows a note's link, with a picker when there are several. |
 | `<Leader>ar` | `reply` | Opens the chat for the note. Only notes with a channel accept replies. |
+| `<Leader>aR` | `lastreply` | Shows the note with the latest agent reply and opens its float. |
 | `<Leader>af` | `autofloat` | Toggles whether stepping opens the note float, for this session. |
 | `<Leader>ai` | `inline` | Toggles the virtual lines under notes, for this session. |
 | | `replies` | Prints your replies. |
@@ -258,6 +266,14 @@ The keys below are the defaults; see [Keymaps](#keymaps) to change them.
 | | `viewed` | Prints which notes you have viewed and which you have not. |
 | | `clear` | Removes every note. |
 | | `reload` | Re-requires the Lua modules and keeps notes, channels and threads. If `setup()` has run, it calls `setup()` again with the same options. |
+
+### Notes list
+
+`<Leader>al` opens the notes list, a quickfix list of its own. Each entry reads `path|lines| N. ● summary`: the step, the kind's sign, and the note's `summary` or, without one or with `list_text = "text"`, the first line of its text. The text after the location takes the kind's colour; the selected entry keeps `QuickFixLine`.
+
+An entry with a reply thread ends in a tag such as `[3 msgs]`. While the thread has agent messages you have not seen, the tag counts them, as in `[3 msgs, 1 new]`, coloured `AgentNoteUnread`. An agent message counts as seen once the note's float or its chat shows it, with a UI attached.
+
+When the agent replies, a small notice opens in the top right corner for `toast` milliseconds, such as `Reply on note #3 · <Leader>aR to view`. It does not take focus. A reply while it shows replaces it and counts both. The key is the one mapped to `lastreply`, left out when none is. No notice opens when the float or chat already shows the reply.
 
 `:AgentNotes` without an action opens the list. In the note float, `<CR>` follows the link under the cursor and `q` closes the float. In the chat, `<C-CR>` or `<C-s>` sends, and `q` or `<Esc>` in Normal mode closes it.
 
@@ -276,6 +292,7 @@ Adds one note and returns its id. Adding a note identical to an existing one ret
 | `end_line` | no | Last line. Defaults to `line`. |
 | `kind` | no | `info` (default), `warn` or `issue`. |
 | `text` | yes | Note text. `\n` starts a new line. `[[path:line]]` and `[[path:line\|label]]` are links. The float and chat show basic markdown (see [Markdown](#markdown)). |
+| `summary` | no | One line of about 60 characters or less that the notes list shows instead of the text's first line. Re-adding a note without `summary` keeps the one it has. |
 | `order` | no | Position in reading order. Notes with equal orders keep call order. Defaults to after the last note. |
 | `channel` | no | A channel id or path from `channel()`, so the user can reply. Ignored while replies are off. |
 | `viewed` | no | `true` starts the note as viewed, without a view event. Use it to carry the state forward when re-adding a note the user has seen. |
@@ -296,11 +313,12 @@ Links work anywhere in the text, including inside bold. Inline notes under the c
 
 | Function | Effect |
 | --- | --- |
-| `list()` | Returns the notes in reading order as tables with `id`, `order`, `kind`, `file`, `line`, `end_line`, `text`, `links`, `thread`, `viewed`, and `first_viewed` and `last_viewed` (UTC times, `nil` until the plugin records a view). |
-| `summary()` | Prints and returns one line per note: `N. #id [kind] [viewed] path:lines  first line`, plus its links. The marker is `[viewed]` or `[unviewed]`. |
+| `list()` | Returns the notes in reading order as tables with `id`, `order`, `kind`, `file`, `line`, `end_line`, `text`, `summary`, `links`, `thread`, `unread` (the count of agent messages the user has not seen), `viewed`, and `first_viewed` and `last_viewed` (UTC times, `nil` until the plugin records a view). |
+| `summary()` | Prints and returns one line per note: `N. #id [kind] [viewed] path:lines  first line`, plus its summary and links. The marker is `[viewed]` or `[unviewed]`. |
 | `viewed()` | Prints which notes the user has viewed, and returns `{ viewed = { ids }, unviewed = { ids } }`, each in reading order. See [Viewed notes](#viewed-notes). |
 | `jump(i)` | Shows the `i`-th note in reading order. |
 | `next()`, `prev()` | Show the next or previous note, wrapping at either end. |
+| `lastreply()` | Shows the note with the latest agent reply and opens its float. Prints "No agent reply yet" when there is none. |
 | `open()` | Opens the notes list. |
 | `show()` | Toggles the note float for the cursor line. |
 | `enter()` | Enters the note float, opening it for the cursor line first. |

@@ -4,6 +4,7 @@
 -- cursor for DWELL ms on its lines while its inline text is on screen, or while
 -- its float is open. The first
 -- view of a note with a channel appends a {"type":"view"} line to the channel file.
+-- The agent's messages in a thread count as read once the float or chat shows them.
 return function(C)
   local api = vim.api
   local S = C.S
@@ -30,6 +31,17 @@ return function(C)
     end
   end
 
+  --- Marks the agent messages in notes' threads read, now that the float or chat
+  --- shows them, and refreshes the notes list when that changed.
+  function V.read(notes)
+    if not watched() then return end
+    local changed = false
+    for _, n in ipairs(notes) do
+      if (n.unread or 0) > 0 then n.unread, changed = 0, true end
+    end
+    if changed then C.qf_sync() end
+  end
+
   --- Records a view of the notes on the cursor line, after landing there.
   function V.at_cursor() V.mark(C.notes_at_cursor()) end
 
@@ -39,7 +51,11 @@ return function(C)
   local function rest()
     if not watched() then return end
     local f = S.float
-    if f and api.nvim_win_is_valid(f.win) then V.mark(f.notes) end
+    if f and api.nvim_win_is_valid(f.win) then
+      V.mark(f.notes)
+      V.read(f.notes)
+    end
+    if S.chat and api.nvim_win_is_valid(S.chat.history) then V.read { S.chat.note } end
     if not S.inline or api.nvim_win_get_config(0).relative ~= "" or vim.bo.buftype ~= "" then return end
     local top, bottom = vim.fn.line "w0", vim.fn.line "w$"
     local seen = {}

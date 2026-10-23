@@ -48,10 +48,11 @@ The agent-notes.nvim plugin shows each note as a sign plus wrapped virtual lines
 Add one note per `vim_command`:
 
 ```
-lua AgentNotes.add{file='/abs/a.go', line=42, end_line=48, kind='warn', text='Retries without backoff.\nCompare [[/abs/b.go:7|the client\'s retry]] and [[c.go:30]].'}
+lua AgentNotes.add{file='/abs/a.go', line=42, end_line=48, kind='warn', summary='Retries without backoff', text='Retries without backoff.\nCompare [[/abs/b.go:7|the client\'s retry]] and [[c.go:30]].'}
 ```
 
 - `kind`: `info` for context that helps the user understand the code, `warn` for something the user may take issue with that is not clearly wrong, `issue` for something you are nearly certain is a problem.
+- `summary` is what the notes list shows. Always pass one: a plain one-line gist of the note, about 60 characters or less, with no markdown or links. Plugins older than this field raise no error for it; they ignore it.
 - `end_line` is optional. The file need not be open. Add notes after you finish editing a file. If code changes while notes are shown, follow [Keep notes in place when code changes](#keep-notes-in-place-when-code-changes).
 - Links are `[[path:line]]` or `[[path:line|label]]`, absolute or relative to nvim's cwd.
 - Notes read in call order across files; `order=<n>` places one explicitly (equal orders keep call order). Step numbers renumber as notes are added or cleared.
@@ -85,15 +86,15 @@ Notes track edits made in nvim, but not changes on disk: a reloaded buffer keeps
 
 1. If the session shows a PR worktree, move it to the new revision: `git -C <worktree> checkout --detach <new sha>`.
 2. Reload the unmodified buffers: `lua for _, b in ipairs(vim.api.nvim_list_bufs()) do if vim.api.nvim_buf_is_loaded(b) and vim.bo[b].buftype == '' and not vim.bo[b].modified then vim.cmd.checktime(b) end end`. This needs `autoread`, which is on by default. Tell the user about a changed file whose buffer has unsaved changes instead of reloading it.
-3. Read the notes with `lua print(vim.json.encode(AgentNotes.list()))` and keep each one's `text`, `kind`, `order` and `viewed`, plus the channel you gave it.
+3. Read the notes with `lua print(vim.json.encode(AgentNotes.list()))` and keep each one's `text`, `summary`, `kind`, `order` and `viewed`, plus the channel you gave it.
 4. For every note in a changed file, find its code in the new file and recompute `line` and `end_line`. Check notes outside the edited hunks too, since lines added or removed above them shift them. If the change altered what a note describes, rewrite its text, or drop it if it no longer applies. Recompute `[[path:line]]` links into changed files too, in every note.
-5. `clear` those notes and add them again with the new lines, passing `viewed=true` for notes the user had viewed and the same `channel`. Then `summary()` to check them. Re-added notes get new ids and lose their threads, so map a later reply's old id to the new one before you `respond`.
+5. `clear` those notes and add them again with the new lines, passing `viewed=true` for notes the user had viewed, the same `summary` and the same `channel`. Then `summary()` to check them. Re-added notes get new ids and lose their threads, so map a later reply's old id to the new one before you `respond`.
 
 ## PR walkthroughs
 
 1. Check out the PR head in a detached worktree so line numbers match: `git -C <repo> fetch origin pull/<n>/head` and `git -C <repo> worktree add --detach <repo>/.worktrees/pr-<n> FETCH_HEAD` (check that `.worktrees/` is ignored). Record the head SHA you review (`git -C <worktree> rev-parse HEAD`); the next round diffs from it.
 2. Start the session in the worktree: `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session start <repo>/.worktrees/pr-<n>`.
-3. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base (for a later round, the range under [Later rounds](#later-rounds)), and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the bullets from "Write notes the user can read" into its prompt. When the `teach` and `unslop` skills are available, tell it to load them for how to write, and to use `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
+3. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base (for a later round, the range under [Later rounds](#later-rounds)), and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `summary` of about 60 characters or less, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the bullets from "Write notes the user can read" into its prompt. When the `teach` and `unslop` skills are available, tell it to load them for how to write, and to use `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
 4. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer and replies are on (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()` and `jump(1)`, and give the user the attach command.
 5. When the walkthrough is over, wrap up (below), then `git -C <repo> worktree remove <repo>/.worktrees/pr-<n>`.
 
@@ -123,17 +124,18 @@ Stepping works inside a gitsigns diff (`:Gitsigns diffthis`, against the index o
 
 ## Keys
 
-The first time you add notes in a session, tell the user the keys. These are the defaults. Use the keys in `AgentNotes.config().keymaps` instead (`keymaps` is `false` when the user maps none), leave out an entry that is `false`, and leave out `<Leader>ar` when replies are off.
+The first time you add notes in a session, tell the user the keys. These are the defaults. Use the keys in `AgentNotes.config().keymaps` instead (`keymaps` is `false` when the user maps none), leave out an entry that is `false`, and leave out `<Leader>ar` and `<Leader>aR` when replies are off.
 
 - `<Leader>an` / `<Leader>ap`: next or previous note, wrapping at either end.
 - `<Leader>af`: toggle whether stepping opens the note float, for this session. `display` in the user's config sets where it starts: on for `both` and `float`, off for `inline`.
 - `<Leader>ai`: toggle the note text under each line, for this session; the sign stays. Off at the start with `display = "float"`.
 - `<Leader>as`: toggle the note float for the cursor line. `<Leader>ae`: enter it (to scroll or use links).
 - `<Leader>ag`: follow a note's link, with a picker for several. `<CR>` on a link in the float does the same.
+- `<Leader>aR`: show the note with your latest reply (only when replies are on).
 - `<Leader>ar`: open the chat for the note: the note and its thread above, input below. Ctrl+Enter or `<C-s>` sends and keeps the chat open; `<CR>` is a newline; `q` or `<Esc>` in normal mode closes it. Only notes with a channel accept replies.
 - `<Leader>al`: the notes list, its own quickfix list; the user's earlier lists stay reachable with `:colder`.
 
-`:AgentNotes` takes `next`, `prev`, `list`, `show`, `enter`, `follow`, `reply`, `replies`, `autofloat`, `inline`, `summary`, `viewed`, `clear` and `reload`.
+`:AgentNotes` takes `next`, `prev`, `list`, `show`, `enter`, `follow`, `reply`, `lastreply`, `replies`, `autofloat`, `inline`, `summary`, `viewed`, `clear` and `reload`.
 
 ## Wrap up
 

@@ -7,6 +7,8 @@ local DEFAULTS = {
   socket = false,
   display = "both",
   replies = true,
+  list_text = "summary",
+  toast = 3000,
   highlights = {},
   keymaps = {
     next = "<Leader>an",
@@ -16,6 +18,7 @@ local DEFAULTS = {
     enter = "<Leader>ae",
     follow = "<Leader>ag",
     reply = "<Leader>ar",
+    lastreply = "<Leader>aR",
     autofloat = "<Leader>af",
     inline = "<Leader>ai",
   },
@@ -33,6 +36,7 @@ local LINKS = {
   AgentNoteCode = "String",
   AgentNoteHeading = "@markup.heading",
   AgentNoteQuote = "Comment",
+  AgentNoteUnread = "DiagnosticHint",
 }
 
 local function hl(name) return api.nvim_get_hl(0, { name = name }) end
@@ -62,6 +66,10 @@ T.test("bad options raise a clear error and change nothing", function()
     ["display must be"] = { display = 1 },
     ["opts must be a table, got string"] = "inline",
     ["replies must be a boolean, got number"] = { replies = 0 },
+    ['list_text must be "summary" or "text", got "full"'] = { list_text = "full" },
+    ["toast must be a whole number of milliseconds above 0, or false, got 0"] = { toast = 0 },
+    ['toast must be a whole number of milliseconds above 0, or false, got "3000"'] = { toast = "3000" },
+    ["toast must be a whole number of milliseconds above 0, or false, got true"] = { toast = true },
     ["highlights must be a table, got string"] = { highlights = "red" },
     ["highlights.info must be a table, got string"] = { highlights = { info = "red" } },
     ["highlights.warn: "] = { highlights = { warn = { fg = "notacolour" } } },

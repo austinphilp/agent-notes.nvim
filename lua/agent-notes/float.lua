@@ -162,6 +162,7 @@ return function(C)
     })
     if focus then api.nvim_set_current_win(win) end
     C.viewed.mark(notes)
+    C.viewed.read(notes)
   end
 
   return F

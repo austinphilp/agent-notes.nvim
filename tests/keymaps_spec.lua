@@ -8,6 +8,7 @@ local DEFAULTS = {
   ["\\ae"] = { "<Plug>(AgentNotesEnter)", "Enter agent note" },
   ["\\ag"] = { "<Plug>(AgentNotesFollow)", "Follow agent note link" },
   ["\\ar"] = { "<Plug>(AgentNotesReply)", "Reply to agent note" },
+  ["\\aR"] = { "<Plug>(AgentNotesLastreply)", "Show latest agent reply" },
   ["\\af"] = { "<Plug>(AgentNotesAutofloat)", "Toggle agent note float on step" },
   ["\\ai"] = { "<Plug>(AgentNotesInline)", "Toggle inline agent notes" },
 }
@@ -167,9 +168,9 @@ T.test("a buffer-local map on the same key does not keep a stale default", funct
   AgentNotes.setup()
 end)
 
-T.test("replies = false leaves the reply key unmapped", function()
+T.test("replies = false leaves the reply keys unmapped", function()
   AgentNotes.setup { replies = false }
-  T.eq(with { ["\\ar"] = false }, mapped())
+  T.eq(with { ["\\ar"] = false, ["\\aR"] = false }, mapped())
   AgentNotes.setup()
 end)
 
