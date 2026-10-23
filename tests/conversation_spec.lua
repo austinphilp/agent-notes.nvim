@@ -119,9 +119,15 @@ T.test("opening the chat reads the note's agent messages, and replies there arri
   api.nvim_win_set_cursor(0, { 1, 0 })
   AgentNotes.reply()
   T.eq(0, AgentNotes.list()[1].unread, "read in the chat")
+  local chat = AgentNotes._state.chat
+  api.nvim_buf_set_lines(api.nvim_win_get_buf(chat.input), 0, -1, false, { "Why not?" })
+  api.nvim_set_current_win(chat.input)
+  api.nvim_feedkeys(vim.keycode "<C-s>", "x", false)
+  T.eq({ "1. ● Why  [2 msgs]" }, entries(), "the user's reply refreshes the list")
+  vim.cmd "wincmd p"
   AgentNotes.respond(id, "More")
   T.eq(0, AgentNotes.list()[1].unread, "shown in the open chat")
-  T.eq(" Reply on note #1 · \\aR to view ", toast_text(), "no toast for the reply already on screen")
+  T.eq(1, AgentNotes._state.toast.count, "the reply already on screen adds no toast")
 end)
 
 T.test("a reply shows a toast that does not take focus, replaced by the next one", function()

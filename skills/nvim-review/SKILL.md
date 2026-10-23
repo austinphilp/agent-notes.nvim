@@ -131,7 +131,7 @@ The first time you add notes in a session, tell the user the keys. These are the
 - `<Leader>ai`: toggle the note text under each line, for this session; the sign stays. Off at the start with `display = "float"`.
 - `<Leader>as`: toggle the note float for the cursor line. `<Leader>ae`: enter it (to scroll or use links).
 - `<Leader>ag`: follow a note's link, with a picker for several. `<CR>` on a link in the float does the same.
-- `<Leader>aR`: show the note with your latest reply (only when replies are on).
+- `<Leader>aR`: show the note with the agent's latest reply (only when replies are on).
 - `<Leader>ar`: open the chat for the note: the note and its thread above, input below. Ctrl+Enter or `<C-s>` sends and keeps the chat open; `<CR>` is a newline; `q` or `<Esc>` in normal mode closes it. Only notes with a channel accept replies.
 - `<Leader>al`: the notes list, its own quickfix list; the user's earlier lists stay reachable with `:colder`.
 

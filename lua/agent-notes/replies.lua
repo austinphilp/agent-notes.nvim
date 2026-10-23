@@ -70,6 +70,7 @@ return function(C)
       n.unread, n.reply_seq = (n.unread or 0) + 1, C.S.reply_seq
     end
     if C.S.chat and C.S.chat.note == n then refresh_chat() end
+    C.qf_sync() -- the thread tag changed
     R.log(n, type, { text = text, time = time })
   end
 
@@ -204,7 +205,8 @@ return function(C)
     )
     api.nvim_buf_set_lines(t.buf, 0, -1, false, { text })
     local width = math.max(1, math.min(vim.fn.strdisplaywidth(text), vim.o.columns - 2))
-    local config = { relative = "editor", row = 1, col = math.max(0, vim.o.columns - width - 2), width = width, height = 1 }
+    local col = math.max(0, vim.o.columns - width - 2)
+    local config = { relative = "editor", row = 1, col = col, width = width, height = 1 }
     if t.win then
       api.nvim_win_set_config(t.win, config)
     else

@@ -22,6 +22,8 @@ if not S.config then
   S.config = config.resolve()
   S.inline, S.autofloat = true, true
 end
+-- A reload after an upgrade, without setup(), keeps options from before newer ones existed.
+S.config = vim.tbl_extend("keep", S.config, config.defaults())
 config.apply_highlights(S.config)
 
 local api = vim.api
@@ -652,7 +654,6 @@ function M.respond(id, text)
   end
   -- An open float or chat has shown the reply already.
   if (n.unread or 0) > 0 then C.replies.toast(n) end
-  qf_sync()
 end
 
 local group = api.nvim_create_augroup("agent_notes", { clear = true })
