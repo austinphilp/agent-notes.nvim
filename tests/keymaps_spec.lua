@@ -187,6 +187,24 @@ T.test("reload re-applies the keymaps and they call the current module", functio
   AgentNotes.setup()
 end)
 
+local steps = T.file("steps.lua", { "1", "2", "3", "4", "5" })
+
+T.test("the next and prev keys take a count", function()
+  AgentNotes.setup()
+  for line = 1, 5 do
+    AgentNotes.add { file = steps, line = line, text = "note " .. line }
+  end
+  local function pos()
+    for i, n in ipairs(AgentNotes.list()) do
+      if n.id == AgentNotes._state.current then return i end
+    end
+  end
+  vim.api.nvim_feedkeys(vim.keycode "4<Leader>an", "x", false)
+  T.eq(4, pos(), "4<Leader>an")
+  vim.api.nvim_feedkeys(vim.keycode "2<Plug>(AgentNotesPrev)", "x", false)
+  T.eq(2, pos(), "2<Plug>(AgentNotesPrev)")
+end)
+
 -- Starts nvim with an init.lua of lines, and returns the keys mapped once startup
 -- has finished.
 local function startup(lines)

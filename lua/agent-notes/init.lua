@@ -4,7 +4,7 @@
 -- and keeps existing notes. Notes show as a sign plus wrapped virtual lines under their first line, coloured by kind,
 -- track their lines through edits with extmarks, and never modify the file.
 -- API: AgentNotes.add{file=, line=, end_line=, kind=, text=, summary=, order=, channel=, viewed=}, open(),
--- next(), prev(), jump(i), lastreply(), show(), enter(), follow(), list(), summary(), viewed(),
+-- next([count]), prev([count]), jump(i), lastreply(), show(), enter(), follow(), list(), summary(), viewed(),
 -- clear([file | {file=, channel=}]), channel([id]), respond(id, text), reply(), replies([channel]),
 -- autofloat([on]), inline([on]), setup(opts), config().
 -- Links in text: [[path:line]] or [[path:line|label]]. Helpers live in agent-notes/*.lua.
@@ -540,20 +540,28 @@ function M.inline(on)
   return value
 end
 
-local function step(delta)
+local function step(delta, count)
+  count = count or 1
+  if type(count) ~= "number" or count < 1 or count ~= math.floor(count) or count == math.huge then
+    error("AgentNotes: count must be a whole number above 0, got " .. vim.inspect(count), 0)
+  end
   local list = ordered()
   if #list == 0 then return print "No agent notes" end
-  local pos
+  -- With no current note, start just outside the list, so the first step lands on
+  -- the first note going forward and on the last going back.
+  local pos = delta > 0 and 0 or #list + 1
   for i, n in ipairs(list) do
     if n.id == S.current then pos = i end
   end
-  if not pos then return M.jump(delta > 0 and 1 or #list) end
-  M.jump((pos - 1 + delta) % #list + 1)
+  -- Whole laps change nothing. fmod drops them exactly, where % on a huge float
+  -- can be off.
+  M.jump((pos - 1 + delta * math.fmod(count, #list)) % #list + 1)
 end
 
---- Next/previous note in reading order, wrapping at either end.
-function M.next() step(1) end
-function M.prev() step(-1) end
+--- Steps count notes (default 1) forward or back in reading order, wrapping at
+--- either end.
+function M.next(count) step(1, count) end
+function M.prev(count) step(-1, count) end
 
 local function float_open() return S.float and api.nvim_win_is_valid(S.float.win) end
 

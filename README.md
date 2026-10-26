@@ -225,6 +225,8 @@ vim.keymap.set("n", "]n", "<Plug>(AgentNotesNext)")
 vim.keymap.set("n", "[n", "<Plug>(AgentNotesPrev)")
 ```
 
+`<Plug>(AgentNotesNext)` and `<Plug>(AgentNotesPrev)` take a count, so `5<Leader>an` shows the fifth note ahead.
+
 When `setup()` maps different keys from an earlier call, it removes the keys it mapped before. A key you remapped or deleted since is yours for the rest of the session: no later `setup()` call or `:AgentNotes reload` maps it again, for any action. `<Leader>` takes the value of `mapleader` when the keys are mapped, so set `mapleader` before lazy.nvim loads plugins.
 
 With which-key.nvim, the keys share a group named "Agent notes". The group's prefix is the part that the mapped keys share, such as `<Leader>a`. The plugin adds no group when the shared part is shorter than two keys. which-key keeps a group that an earlier `setup()` call added.
@@ -251,8 +253,8 @@ The keys below are the defaults; see [Keymaps](#keymaps) to change them.
 
 | Key | `:AgentNotes` action | Effect |
 | --- | --- | --- |
-| `<Leader>an` | `next` | Shows the next note, wrapping at the end. |
-| `<Leader>ap` | `prev` | Shows the previous note, wrapping at the start. |
+| `<Leader>an` | `next` | Shows the next note, wrapping at the end. `5<Leader>an` and `:AgentNotes next 5` step 5 notes. |
+| `<Leader>ap` | `prev` | Shows the previous note, wrapping at the start. `5<Leader>ap` and `:AgentNotes prev 5` step 5 notes back. |
 | `<Leader>al` | `list` | Opens the notes list, a quickfix list of its own. |
 | `<Leader>as` | `show` | Toggles the note float for the cursor line. |
 | `<Leader>ae` | `enter` | Enters the note float, to scroll it or use its links. |
@@ -317,7 +319,7 @@ Links work anywhere in the text, including inside bold. Inline notes under the c
 | `summary()` | Prints and returns one line per note: `N. #id [kind] [viewed] path:lines  first line`, plus its summary and links. The marker is `[viewed]` or `[unviewed]`. |
 | `viewed()` | Prints which notes the user has viewed, and returns `{ viewed = { ids }, unviewed = { ids } }`, each in reading order. See [Viewed notes](#viewed-notes). |
 | `jump(i)` | Shows the `i`-th note in reading order. |
-| `next()`, `prev()` | Show the next or previous note, wrapping at either end. |
+| `next([count])`, `prev([count])` | Step `count` notes forward or back, 1 by default, wrapping at either end. When no note is current, the first step goes to the first note, or back to the last, so `next(3)` shows the third note. `count` must be a whole number above 0. |
 | `lastreply()` | Shows the note with the latest agent reply and opens its float. Prints "No agent reply yet" when there is none. |
 | `open()` | Opens the notes list. |
 | `show()` | Toggles the note float for the cursor line. |

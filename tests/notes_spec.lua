@@ -60,6 +60,59 @@ T.test("clear removes all notes, a file's, or a channel's, and returns the count
   T.eq(0, #AgentNotes.list())
 end)
 
+local steps = T.file("steps.lua", { "1", "2", "3", "4", "5" })
+
+-- Adds n notes, one per line from 1 up, and returns a function that gives the
+-- reading position of the current note.
+local function notes(n)
+  for line = 1, n do
+    AgentNotes.add { file = steps, line = line, text = "note " .. line }
+  end
+  return function()
+    for i, note in ipairs(AgentNotes.list()) do
+      if note.id == AgentNotes._state.current then return i end
+    end
+  end
+end
+
+T.test("next(count) and prev(count) step count notes, wrapping at either end", function()
+  local pos = notes(3)
+  AgentNotes.next(2)
+  T.eq(2, pos(), "no current note: the first step lands on the first note")
+  AgentNotes.next(2)
+  T.eq(1, pos(), "wraps forward")
+  AgentNotes.prev(4)
+  T.eq(3, pos(), "wraps back past a whole lap")
+  AgentNotes.next()
+  T.eq(1, pos(), "count defaults to 1")
+  AgentNotes.clear()
+  pos = notes(3)
+  AgentNotes.prev(2)
+  T.eq(2, pos(), "no current note: the first step back lands on the last note")
+  T.raises("count must be a whole number above 0, got 0", function() AgentNotes.next(0) end)
+  T.raises("got 1.5", function() AgentNotes.prev(1.5) end)
+  T.raises("got inf", function() AgentNotes.next(math.huge) end)
+  AgentNotes.next(1e17) -- one past a whole number of laps of 3
+  T.eq(3, pos(), "a huge count")
+end)
+
+T.test(":AgentNotes next and prev take a count", function()
+  local pos = notes(4)
+  vim.cmd "AgentNotes next 3"
+  T.eq(3, pos())
+  vim.cmd "AgentNotes prev 2"
+  T.eq(1, pos())
+  T.raises("count must be a whole number above 0, got 0", function() vim.cmd "AgentNotes next 0" end)
+  T.raises("too many arguments for list", function() vim.cmd "AgentNotes list 2" end)
+  T.raises("too many arguments for next", function() vim.cmd "AgentNotes next 2 3" end)
+  T.eq({}, vim.fn.getcompletion("AgentNotes next ", "cmdline"), "completes only the action")
+  for _, line in ipairs { "AgentNotes ", "silent AgentNotes ", "vert AgentNotes l", "  AgentNotes ne" } do
+    T.ok(vim.tbl_contains(vim.fn.getcompletion(line, "cmdline"), "next"), "completes the action: " .. line)
+  end
+  T.eq({}, vim.fn.getcompletion("silent AgentNotes next ", "cmdline"), "not after a modifier either")
+  T.ok(vim.tbl_contains(vim.fn.getcompletion("AgentNotes next | AgentNotes ", "cmdline"), "next"), "after a |")
+end)
+
 T.test("respond threads the answer and appends it to the channel file", function()
   local channel = AgentNotes.channel "respond"
   local id = AgentNotes.add { file = a, line = 1, text = "Why?", channel = channel }

@@ -6,11 +6,11 @@ local M = {}
 local api = vim.api
 
 -- Every :AgentNotes action, in completion order: the module function it calls when
--- that is not its name, its description, its default key if it has one, and
--- whether it needs replies on.
+-- that is not its name, its description, its default key if it has one, whether it
+-- needs replies on, and whether it takes a count.
 M.ACTIONS = {
-  { name = "next", key = "<Leader>an", desc = "Next agent note" },
-  { name = "prev", key = "<Leader>ap", desc = "Previous agent note" },
+  { name = "next", key = "<Leader>an", desc = "Next agent note", count = true },
+  { name = "prev", key = "<Leader>ap", desc = "Previous agent note", count = true },
   { name = "list", fn = "open", key = "<Leader>al", desc = "Agent notes list" },
   { name = "show", key = "<Leader>as", desc = "Toggle agent note" },
   { name = "enter", key = "<Leader>ae", desc = "Enter agent note" },
