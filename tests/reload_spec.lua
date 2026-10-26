@@ -26,4 +26,19 @@ T.test("reload re-applies setup options", function()
   T.eq(1, #vim.api.nvim_get_autocmds { group = "agent_notes_socket", event = "FocusGained" })
 end)
 
+T.test("reload closes a waiting chat and stops its spinner", function()
+  AgentNotes.setup()
+  AgentNotes.add { file = a, line = 1, text = "Why", channel = AgentNotes.channel "reload" }
+  AgentNotes._state.notes[1].thread = { { who = "you", text = "hi" } }
+  vim.cmd.edit(a)
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  AgentNotes.reply()
+  vim.cmd "stopinsert"
+  local timer = AgentNotes._state.chat.spinner
+  T.ok(timer and timer:is_active(), "running while waiting")
+  vim.cmd "AgentNotes reload"
+  T.eq(nil, AgentNotes._state.chat, "chat closed")
+  T.ok(timer:is_closing(), "timer stopped")
+end)
+
 T.run()

@@ -130,6 +130,75 @@ T.test("opening the chat reads the note's agent messages, and replies there arri
   T.eq(1, AgentNotes._state.toast.count, "the reply already on screen adds no toast")
 end)
 
+-- The chat history's last two lines and the spinner frame drawn before the last.
+local function chat_tail()
+  local c = AgentNotes._state.chat
+  local lines = api.nvim_buf_get_lines(c.history_buf, 0, -1, false)
+  local frame
+  local row = #lines - 1
+  for _, m in ipairs(api.nvim_buf_get_extmarks(c.history_buf, -1, { row, 0 }, { row, -1 }, { details = true })) do
+    if m[4].virt_text then frame = m[4].virt_text[1][1] end
+  end
+  return { lines[#lines - 1], lines[#lines] }, frame
+end
+
+local function send(text)
+  local chat = AgentNotes._state.chat
+  api.nvim_buf_set_lines(api.nvim_win_get_buf(chat.input), 0, -1, false, { text })
+  api.nvim_set_current_win(chat.input)
+  api.nvim_feedkeys(vim.keycode "<C-s>", "x", false)
+end
+
+T.test("the chat shows the agent thinking from a sent reply until the response", function()
+  AgentNotes.setup()
+  local id = AgentNotes.add { file = a, line = 1, text = "Why", channel = chan() }
+  vim.cmd.edit(a)
+  api.nvim_win_set_cursor(0, { 1, 0 })
+  AgentNotes.reply()
+  local tail, frame = chat_tail()
+  T.eq({ "", "No messages yet." }, tail, "not with an empty thread")
+  T.eq(nil, frame)
+  T.eq(nil, AgentNotes._state.chat.spinner, "no timer with an empty thread")
+  send "Why not?"
+  tail, frame = chat_tail()
+  T.eq({ "agent:", "thinking…" }, tail, "shown after sending")
+  T.eq("⠋ ", frame)
+  local c = AgentNotes._state.chat
+  T.eq(api.nvim_buf_line_count(c.history_buf), api.nvim_win_get_cursor(c.history)[1], "scrolled to the bottom")
+  T.ok(vim.wait(1000, function() return select(2, chat_tail()) ~= "⠋ " end), "the spinner turns")
+  AgentNotes.respond(id, "Because")
+  tail, frame = chat_tail()
+  T.eq({ "agent:", "Because" }, tail, "gone after the response")
+  T.eq(nil, frame)
+  T.eq(nil, c.spinner, "the timer stops on the response")
+  AgentNotes.reply()
+  T.eq({ "agent:", "Because" }, chat_tail(), "not when the agent spoke last")
+  T.eq(nil, AgentNotes._state.chat.spinner)
+  cleanup()
+end)
+
+T.test("a reopened chat still waiting shows the indicator, and closing it stops the timer", function()
+  AgentNotes.setup()
+  AgentNotes.add { file = a, line = 1, text = "Why", channel = chan() }
+  vim.cmd.edit(a)
+  api.nvim_win_set_cursor(0, { 1, 0 })
+  AgentNotes.reply()
+  send "Hello?"
+  vim.cmd "stopinsert"
+  local timer = AgentNotes._state.chat.spinner
+  T.ok(timer and timer:is_active(), "running while waiting")
+  api.nvim_set_current_win(AgentNotes._state.chat.history)
+  api.nvim_feedkeys("q", "x", false)
+  T.eq(nil, AgentNotes._state.chat, "closed")
+  T.ok(timer:is_closing(), "the timer stops when the chat closes")
+  vim.cmd.edit(a)
+  api.nvim_win_set_cursor(0, { 1, 0 })
+  AgentNotes.reply()
+  T.eq({ "agent:", "thinking…" }, chat_tail(), "shown again on reopening")
+  T.ok(AgentNotes._state.chat.spinner:is_active(), "the timer runs again")
+  cleanup()
+end)
+
 T.test("a reply shows a toast that does not take focus, replaced by the next one", function()
   AgentNotes.setup()
   local one = AgentNotes.add { file = a, line = 1, text = "One", channel = chan() }

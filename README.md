@@ -275,7 +275,7 @@ An entry with a reply thread ends in a tag such as `[3 msgs]`. While the thread 
 
 When the agent replies, a small notice opens in the top right corner for `toast` milliseconds, such as `Reply on note #3 · <Leader>aR to view`. It does not take focus. A reply while it shows replaces it and counts both. The key is the one mapped to `lastreply`, left out when none is. No notice opens when the float or chat already shows the reply.
 
-`:AgentNotes` without an action opens the list. In the note float, `<CR>` follows the link under the cursor and `q` closes the float. In the chat, `<C-CR>` or `<C-s>` sends, and `q` or `<Esc>` in Normal mode closes it.
+`:AgentNotes` without an action opens the list. In the note float, `<CR>` follows the link under the cursor and `q` closes the float. In the chat, `<C-CR>` or `<C-s>` sends, and `q` or `<Esc>` in Normal mode closes it. After you send, the chat ends in a spinning `agent: thinking…` line until the agent responds; it shows again if you reopen the chat before then.
 
 ## API
 

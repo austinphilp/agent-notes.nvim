@@ -74,12 +74,53 @@ return function(C)
     R.log(n, type, { text = text, time = time })
   end
 
+  -- While the user's message is the thread's last, the history ends in an agent
+  -- line whose spinner a timer turns until the response arrives or the chat closes.
+  local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+
+  local function awaiting(n) return n.thread and #n.thread > 0 and n.thread[#n.thread].who == "you" end
+
+  local function stop_spinner(c)
+    local t = c.spinner
+    c.spinner = nil
+    if t and not t:is_closing() then
+      t:stop()
+      t:close()
+    end
+  end
+
+  -- Draws frame i of the spinner before the indicator line, as inline virtual text.
+  local function spin(c, i)
+    c.frame = i
+    local buf = c.history_buf
+    if not (api.nvim_buf_is_valid(buf) and c.spin_row < api.nvim_buf_line_count(buf)) then return end
+    c.spin_mark = api.nvim_buf_set_extmark(buf, C.ns, c.spin_row, 0, {
+      id = c.spin_mark,
+      virt_text = { { SPINNER[i] .. " ", "Comment" } },
+      virt_text_pos = "inline",
+    })
+  end
+
+  local function start_spinner(c)
+    if c.spinner then return end
+    c.spinner = vim.uv.new_timer()
+    c.spinner:start(
+      100,
+      100,
+      vim.schedule_wrap(function()
+        if C.S.chat ~= c or not c.spinner then return stop_spinner(c) end
+        spin(c, c.frame % #SPINNER + 1)
+      end)
+    )
+  end
+
   -- The chat window for one note: a read-only history float (note text, then the
   -- thread) above a small input float. It stays open after sending, like a chat.
   function R.close_chat()
     local c = C.S.chat
     C.S.chat = nil
     if not c then return end
+    stop_spinner(c)
     pcall(api.nvim_del_augroup_by_name, "agent_notes_chat")
     -- Leave insert mode first, or the user's next keys would land in the source buffer.
     local cur = api.nvim_get_current_win()
@@ -102,7 +143,22 @@ return function(C)
       lines[#lines + 1] = "No messages yet."
       marks[#marks + 1] = { row = #lines - 1, e = #lines[#lines], hl = "Comment" }
     end
+    local wait = awaiting(c.note)
+    if wait then
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = "agent:"
+      marks[#marks + 1] = { row = #lines - 1, e = #lines[#lines], hl = C.KINDS[c.note.kind].hl }
+      lines[#lines + 1] = "thinking…"
+      marks[#marks + 1] = { row = #lines - 1, e = #lines[#lines], hl = "Comment" }
+    end
     C.float.paint(c.history_buf, lines, marks)
+    c.spin_mark, c.spin_row = nil, #lines - 1
+    if wait then
+      spin(c, c.frame or 1)
+      start_spinner(c)
+    else
+      stop_spinner(c)
+    end
     C.viewed.read { c.note }
     api.nvim_win_set_cursor(c.history, { #lines, 0 })
     api.nvim_win_call(c.history, function() vim.cmd "normal! zb" end)
