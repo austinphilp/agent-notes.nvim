@@ -62,15 +62,15 @@ lua AgentNotes.add{file='/abs/a.go', line=42, end_line=48, kind='warn', summary=
 
 ### Write notes the user can read
 
-Write each note in plain spoken English, the way you would explain the code to a colleague at their desk. When `teach`, `how`, `why` or `unslop` skills are available, follow `teach` for how to explain, `how` for what the code does at runtime, `why` for the reasons behind it, and `unslop` for the prose. Run their workflows only when you lack those facts, not once per note. The float and chat show basic markdown, but inline notes show it as written, so keep markup light: `` `code` `` for identifiers, `**bold**` sparingly, no tables or diagrams, and no offers to go deeper.
+A note's job is to let the user get the point of its code in a few seconds. The user can reply to a note or ask in the conversation for more, so leave detail out until they ask. Write in plain spoken English, as you would to a colleague at their desk, and follow the `unslop` skill for the prose when it is available. Inline notes show markdown as written, so keep markup light: `` `code` `` for identifiers, no tables, lists or diagrams, and no offers to go deeper.
 
-- Lead with what this code does and why it matters, in plain words. Mechanics come after, and only the ones the user needs.
-- One idea per note. A note that covers several behaviours becomes several notes, each on the line that does that thing, in reading order.
-- Short sentences. Split a sentence that chains clauses or names more than two identifiers.
-- Name the concrete case that hits this line, such as "when the cache is empty on the first request".
-- Say how it connects to the previous note or to what the user already knows. Do not assume the user has read the code around it.
-- Define an internal term on first use, or say it plainly instead. Backtick an identifier only when the user needs the name to find it.
-- `warn` and `issue` notes state the risk plainly first, then the scenario that triggers it and what goes wrong.
+- One to three short sentences. The first says what this code does or why it is there, and the note should still work if the user reads only that sentence.
+- One idea per note, on the line that does it.
+- Leave out what the user can read straight off the code: mechanics, restated conditions, every branch. Add a concrete case only when the point is unclear without one.
+- Link with `[[path:line]]` only to code the user will want to jump to from here.
+- `warn` and `issue` notes give the risk first, then the case that triggers it.
+
+Annotate only what the user needs in order to understand the code or decide on it. Skip self-explanatory code, routine changes such as renames and imports, and tests that only confirm what a note already says. A small change may need two or three notes and a typical PR well under fifteen. When more seem necessary, merge related ones or drop the least useful, and mention in the conversation what you left out.
 
 ## What the user has viewed
 
@@ -94,7 +94,7 @@ Notes track edits made in nvim, but not changes on disk: a reloaded buffer keeps
 
 1. Check out the PR head in a detached worktree so line numbers match: `git -C <repo> fetch origin pull/<n>/head` and `git -C <repo> worktree add --detach <repo>/.worktrees/pr-<n> FETCH_HEAD` (check that `.worktrees/` is ignored). Record the head SHA you review (`git -C <worktree> rev-parse HEAD`); the next round diffs from it.
 2. Start the session in the worktree: `${CLAUDE_PLUGIN_ROOT}/bin/nvim-session start <repo>/.worktrees/pr-<n>`.
-3. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base (for a later round, the range under [Later rounds](#later-rounds)), and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `summary` of about 60 characters or less, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the bullets from "Write notes the user can read" into its prompt. When the `teach` and `unslop` skills are available, tell it to load them for how to write, and to use `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
+3. Delegate the analysis to a subagent. Give it the PR, the worktree path and the base (for a later round, the range under [Later rounds](#later-rounds)), and ask for a JSON array of notes (`file` as an absolute path in the worktree, `line`, optional `end_line`, `kind`, `summary` of about 60 characters or less, `text`, optional `order`), each verified against the worktree file, in reading order. Optional keys are omitted or `null`. Paste the whole "Write notes the user can read" section into its prompt, including the guidance on how many notes to write. When the `unslop` skill is available, tell it to load it for the prose. It uses `how` or `why` only for a fact the diff and PR body do not show, keeping `why` to git history and the PR's linked ticket.
 4. Write the JSON to a file in your scratchpad, open a reply channel if the user may want to answer and replies are on (below), and load all notes in one call: `lua for _, n in ipairs(vim.json.decode(table.concat(vim.fn.readfile('<json>'), '\n'))) do n.channel = '<channel path>'; AgentNotes.add(n) end`. Omit `n.channel = ...` without a channel. Then `summary()` and `jump(1)`, and give the user the attach command.
 5. When the walkthrough is over, wrap up (below), then `git -C <repo> worktree remove <repo>/.worktrees/pr-<n>`.
 
@@ -115,7 +115,7 @@ Skip this section when `AgentNotes.config().replies` is `false`: do not open a c
 1. `lua AgentNotes.channel()` prints a new channel file's path (your own path must end in `.jsonl`). Pass it as `channel='<path>'` to each `add`. Channels are per note, so other sessions' notes keep theirs.
 2. Start the `Monitor` tool (load it with ToolSearch `select:Monitor` if deferred) on `tail -n0 -F <path> | grep --line-buffered '"type":"reply"'` with the longest timeout (30 minutes). Re-arm it when it expires while the walkthrough is still going.
 3. Each event is one JSON line: `type` (`reply`; the file also gets `view` and `response` lines, which the filter skips), `note` (id), `order` (its step number), `file`, `line`, `excerpt` (the note's first line), `text` (the user's message), `time`.
-4. Answer with `lua AgentNotes.respond(<note id>, 'text')`, quoted like `add`; ids are the `#n` in `summary()`. It appears in the user's chat window and the note float, and notifies the user. Write answers the same way as notes. You can also add or re-add notes.
+4. Answer with `lua AgentNotes.respond(<note id>, 'text')`, quoted like `add`; ids are the `#n` in `summary()`. It appears in the user's chat window and the note float, and notifies the user. Write answers the same way as notes: answer the question asked, in a few sentences. You can also add or re-add notes.
 5. `lua AgentNotes.replies('<path>')` prints the user's replies to your notes if you need to catch up.
 
 ## Diff view
